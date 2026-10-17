@@ -6,6 +6,20 @@ This project follows [Semantic Versioning](https://semver.org/spec/v2.0.0.html).
 
 ---
 
+## [1.0.0]
+
+The first stable release. The code is identical to 1.0.0-rc.3; only the version changed.
+From here the package follows Semantic Versioning: a breaking change to anything not marked
+`@internal` waits for 2.0.0.
+
+- Tested before release against the published 1.0.0-rc.3 from fresh projects: one copy when
+  installed beside `@dynamic-entity/core`; CommonJS and ESM; a CommonJS Jest suite with no Node
+  flags; Express 4 and 5; TypeScript strict on `@types/express` 4 and 5 with `skipLibCheck` off.
+- Known limit, outside this package: in the browser, the SheetJS `.xlsx` reader loses
+  characters above U+FFFF (most emoji) when a workbook stores them as numeric character
+  references, as openpyxl does. The server reader (`sheet-to-schema/node`, over exceljs) reads
+  them correctly. An official browser `.xlsx` parser is planned for 1.1.
+
 ## [1.0.0-rc.3]
 
 - **Moved to standalone repository**: `sheet-to-schema` is now developed in its own repository at [berserker5619/sheet-to-schema](https://github.com/berserker5619/sheet-to-schema). Development history prior to Phase 1 lives in the [Dynamic Entity repository](https://github.com/berserker5619/Dynamic-Entity).

@@ -1,6 +1,6 @@
 {
   "name": "sheet-to-schema",
-  "version": "1.0.0-rc.3",
+  "version": "1.0.0",
   "description": "Turn spreadsheet rows into records that fit a schema you already have. The main entry is browser-safe with no runtime dependencies; sheet-to-schema/node reads files and serves HTTP.",
   "main": "dist/index.js",
   "module": "dist/index.mjs",
@@ -28,7 +28,7 @@
     "build": "tsup",
     "test": "jest",
     "test:coverage": "jest --coverage",
-    "lint": "tsc --noEmit && eslint . && node scripts/check-control-chars.mjs",
+    "lint": "tsc --noEmit && eslint . && node scripts/check-control-chars.mjs && node scripts/check-readme-links.mjs",
     "check:bundle": "node scripts/check-bundle.mjs",
     "check:package": "node scripts/check-package.mjs",
     "check:timezones": "node scripts/check-timezones.mjs",

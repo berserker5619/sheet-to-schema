@@ -25,7 +25,7 @@ Thanks for contributing!
 ## Verification gates
 
 Before submitting a pull request, ensure all gates pass:
-- `npm run lint` (TypeScript compile + ESLint + control characters check)
+- `npm run lint` (TypeScript compile + ESLint + control characters check + no relative links in the published README)
 - `npm run build` (tsup compile to CJS/ESM + DTS)
 - `npm run check:bundle` (verifies entry point boundaries)
 - `npm run check:package` (manifest and version parity)
