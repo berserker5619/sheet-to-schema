@@ -58,9 +58,13 @@ jobs:
       - name: Consumer install from tarball
         run: npm run check:consumer
 
+      # Trusted publishing needs npm >= 11.5.1, newer than the npm bundled with Node, so it is
+      # installed. Pinned, not @latest: a release should not change the tool that publishes it
+      # on the day a new npm comes out. 12.2.0 published 1.0.0-rc.3 through trusted publishing,
+      # with provenance and the `latest` dist-tag move. Raise it deliberately.
       - name: Ensure npm supports trusted publishing
         run: |
-          npm install -g npm@latest
+          npm install -g npm@12.2.0
           echo "npm $(npm --version) on node $(node --version)"
 
       - name: Tag matches package version
