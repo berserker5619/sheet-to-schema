@@ -8,7 +8,9 @@
  *
  * **The caller passes the router in.** `express` is an optional peer, and this file is part of
  * `/node`'s one entry, so importing `express` here would make reading a CSV depend on it.
- * Only its types are used, and types are gone by the time this runs.
+ * Not even its types are used: the router, request and response are described below by what
+ * this file touches, so the published typings name nothing from `express` or `@types/express`,
+ * and an Express 4 or 5 router fits them as it is.
  *
  * Every limit applies to every route, a refused request closes its body, and a failure
  * answers with a code and a message this library wrote and nothing from below it.
@@ -24,13 +26,39 @@ import {
   type ImportPreviewResponse,
   type SchemaAdapter,
 } from 'sheet-to-schema';
-import type { Request, Response, Router } from 'express';
+import type { IncomingMessage, ServerResponse } from 'node:http';
 import { destroySource } from './bytes';
 import { ImportError, toErrorBody } from './errors';
 import { resolveLimits, type ImportLimits } from './limits';
 import { receiveUpload, readPlanField } from './multipart';
 import { previewSheet, runImport, type BatchInfo, type ImportRunResult, type SheetPreview } from './run-import';
 import { writeTemplate, TEMPLATE_EXTENSION, TEMPLATE_MEDIA_TYPE, type TemplateFormat, type TemplateSheet } from './write-template';
+
+/**
+ * The request this router reads: a Node request with the path parameters and query string a
+ * router has parsed onto it. An Express request is one. Callbacks that need more of it, such
+ * as an authenticated user, annotate their parameter with their own request type, and the
+ * router's options take that type.
+ */
+export interface ImportRequest extends IncomingMessage {
+  params: Readonly<Record<string, unknown>>;
+  query: Readonly<Record<string, unknown>>;
+}
+
+/** The response this router answers on: a Node response with Express's `status` and `json`. */
+export interface ImportResponse extends ServerResponse {
+  status(code: number): { json(body: unknown): unknown };
+  json(body: unknown): unknown;
+}
+
+/** A route handler, as this router registers one. */
+export type ImportHandler<TRequest extends ImportRequest = ImportRequest> = (request: TRequest, response: ImportResponse) => void;
+
+/** The router the caller passes in: `express.Router()` is one. Only `get` and `post` are used. */
+export interface ImportRouter<TRequest extends ImportRequest = ImportRequest> {
+  get(path: string, handler: ImportHandler<TRequest>): unknown;
+  post(path: string, handler: ImportHandler<TRequest>): unknown;
+}
 
 /** What one name in the path imports into. */
 export interface ImportBinding<TMeta = unknown, TCtx = unknown> {
@@ -79,34 +107,34 @@ export interface ImportBinding<TMeta = unknown, TCtx = unknown> {
  * need a restart to add one, and because the context may depend on who is asking. Returning
  * `undefined` is how a loader says "no such name"; throwing is how it says something went wrong.
  */
-export type BindingSource =
+export type BindingSource<TRequest extends ImportRequest = ImportRequest> =
   | Record<string, ImportBinding>
-  | ((name: string, request: Request) => ImportBinding | undefined | Promise<ImportBinding | undefined>);
+  | ((name: string, request: TRequest) => ImportBinding | undefined | Promise<ImportBinding | undefined>);
 
 /** What the consumer does with a batch of records. Called once per batch, and awaited. */
-export type OnImport = (
+export type OnImport<TRequest extends ImportRequest = ImportRequest> = (
   records: Record<string, unknown>[],
   context: BatchInfo & {
     /** The name in the path. */
     name: string;
     binding: ImportBinding;
     /** For a tenant id, a user, a transaction — whatever the consumer's writer needs. */
-    request: Request;
+    request: TRequest;
   },
 ) => void | Promise<void>;
 
-export interface ImportRouterOptions {
-  bindings: BindingSource;
+export interface ImportRouterOptions<TRequest extends ImportRequest = ImportRequest> {
+  bindings: BindingSource<TRequest>;
   /**
    * Where records go.
    *
    * **It must be idempotent.** A stream that fails at row 30,000 has written 29,999 records,
    * and the client, or a proxy, or the user, will retry.
    */
-  onImport: OnImport;
+  onImport: OnImport<TRequest>;
   limits?: Partial<ImportLimits>;
   /** The language adapters resolve labels in, fixed or read from the request. Default `en`. */
-  lang?: string | ((request: Request) => string);
+  lang?: string | ((request: TRequest) => string);
   /**
    * The order of a date written in digits, for every import and validation this router runs,
    * where a plan entry states none. Reported in each preview, so a client reads its sample the
@@ -170,7 +198,7 @@ export function templateOf(adapter: SchemaAdapter, lang: string, fields: string[
   };
 }
 
-function applyTimeouts(request: Request, response: Response, limits: ImportLimits): void {
+function applyTimeouts(request: ImportRequest, response: ImportResponse, limits: ImportLimits): void {
   // The connection is closed rather than answered. A client that has stopped sending is not
   // waiting for a status code, and an attacker holding a socket open is the case being
   // answered — the reply they want least is the connection going away.
@@ -196,7 +224,7 @@ function applyTimeouts(request: Request, response: Response, limits: ImportLimit
 }
 
 /** Answer a failed request, in the one shape every failure has. */
-export function sendFailure(response: Response, error: unknown): void {
+export function sendFailure(response: ImportResponse, error: unknown): void {
   if (response.headersSent) {
     // A template that failed part-way through is already partly on the wire, and there is no
     // way to take it back. Ending the response abruptly is what tells the client the file is
@@ -224,17 +252,21 @@ export function sendFailure(response: Response, error: unknown): void {
  *     app.use('/import', createImportRouter(express.Router(), { bindings, onImport }));
  *
  * `GET /:name/template`, `POST /:name/preview`, `POST /:name/validate`, `POST /:name/import`,
- * with `name` whatever `options.param` calls it.
+ * with `name` whatever `options.param` calls it. It returns the router it was given, typed as
+ * it was given, so `app.use` takes it as it would the router itself.
  */
-export function createImportRouter(router: Router, options: ImportRouterOptions): Router {
+export function createImportRouter<TRouter extends ImportRouter<TRequest>, TRequest extends ImportRequest = ImportRequest>(
+  router: TRouter,
+  options: ImportRouterOptions<TRequest>,
+): TRouter {
   const limits = resolveLimits(options.limits);
   const param = options.param ?? 'name';
   const engineVersion = options.engineVersion ?? IMPORTER_VERSION;
 
-  const languageOf = (request: Request): string =>
+  const languageOf = (request: TRequest): string =>
     typeof options.lang === 'function' ? options.lang(request) : options.lang ?? 'en';
 
-  const bindingFor = async (request: Request): Promise<{ name: string; binding: ImportBinding }> => {
+  const bindingFor = async (request: TRequest): Promise<{ name: string; binding: ImportBinding }> => {
     const name = String(request.params[param] ?? '');
     const binding =
       typeof options.bindings === 'function' ? await options.bindings(name, request) : ownValue(options.bindings, name);
@@ -266,8 +298,8 @@ export function createImportRouter(router: Router, options: ImportRouterOptions)
   });
 
   const route =
-    (handler: (request: Request, response: Response) => Promise<void>) =>
-    (request: Request, response: Response): void => {
+    (handler: (request: TRequest, response: ImportResponse) => Promise<void>): ImportHandler<TRequest> =>
+    (request, response) => {
       applyTimeouts(request, response, limits);
       handler(request, response).catch(error => sendFailure(response, error));
     };
@@ -341,7 +373,7 @@ export function createImportRouter(router: Router, options: ImportRouterOptions)
     }),
   );
 
-  async function execute(request: Request, write: boolean): Promise<ImportCommitResponse> {
+  async function execute(request: TRequest, write: boolean): Promise<ImportCommitResponse> {
     const { name, binding } = await bindingFor(request);
     const upload = await receiveUpload(request, limits);
 

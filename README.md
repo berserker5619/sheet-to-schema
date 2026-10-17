@@ -188,6 +188,18 @@ app.use(
 Without Express, call `runImport`, `previewSheet`, `writeTemplate` and `receiveUpload`
 yourself; the router is a few lines over them.
 
+The typings need nothing from `@types/express`: the router, request and response are typed by
+what the router uses (`ImportRouter`, `ImportRequest`, `ImportResponse`), and an Express 4 or 5
+router fits them. A callback that needs more of the request annotates it, and the options take
+that type:
+
+```ts
+createImportRouter(express.Router(), {
+  bindings: (name, request: express.Request & { tenant: string }) => loadBinding(request.tenant, name),
+  onImport: async (records, { request }) => saveAll(request.tenant, records), // request is typed the same
+});
+```
+
 Four things to know before deploying it:
 
 1. **An import is not transactional.** A file that fails at row 30,000 has written 29,999

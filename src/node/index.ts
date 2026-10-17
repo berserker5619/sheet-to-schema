@@ -37,4 +37,13 @@ export type { BatchInfo, ImportRunResult, OnBatch, PreviewSheetOptions, RunImpor
 export { readPlanField, receiveUpload, safeFieldName } from './multipart';
 export type { Upload } from './multipart';
 export { createImportRouter, sendFailure, templateFilename, templateOf } from './router';
-export type { BindingSource, ImportBinding, ImportRouterOptions, OnImport } from './router';
+export type {
+  BindingSource,
+  ImportBinding,
+  ImportHandler,
+  ImportRequest,
+  ImportResponse,
+  ImportRouter,
+  ImportRouterOptions,
+  OnImport,
+} from './router';

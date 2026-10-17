@@ -2,11 +2,16 @@
 /**
  * Install the packed tarball the way a user would, and use it from outside this repository.
  *
- * Two scratch projects:
+ * Scratch projects:
  * - bare: no optional peers. The main entry loads as CJS and ESM, every `exports` path resolves,
- *   `/node` loads and reads a CSV, and asking it for a workbook fails with the peer message.
+ *   `/node` reads a CSV from both CJS and ESM, and asking it for a workbook fails with the peer
+ *   message.
  * - full: exceljs, busboy and express installed. `/node` reads a real workbook and serves an
  *   upload through `createImportRouter` over HTTP.
+ * - jest: a CommonJS Jest project, with no Node flags, that requires `/node`, reads a workbook
+ *   and receives an upload. A dynamic `import()` in the CommonJS build fails exactly here.
+ * - types-express4, types-express5: the published typings compile, with `skipLibCheck` off,
+ *   against each major of `@types/express`, used the way the README shows.
  * Also: the packed manifest declares no runtime dependencies.
  */
 import { execFileSync } from 'node:child_process';
@@ -48,6 +53,9 @@ try {
     fs.writeFileSync(path.join(dir, file), text);
     run('node', [file], { cwd: dir, stdio: 'inherit' });
   };
+  // Without the caller's NODE_OPTIONS: the Jest project must pass with no Node flags at all.
+  const cleanEnv = { ...process.env };
+  delete cleanEnv.NODE_OPTIONS;
 
   // Bare: no optional peers.
   const bare = project('bare');
@@ -69,10 +77,21 @@ const main = require('sheet-to-schema');
 assert.equal(main.IMPORTER_VERSION, ${JSON.stringify(pkg.version)});
 assert.equal(main.parseCsv('A,B\\n1,2').rows.length, 1);
 const node = require('sheet-to-schema/node');
-assert.equal(typeof node.readSheet, 'function');
 assert.equal(require('sheet-to-schema/package.json').version, ${JSON.stringify(pkg.version)});
 for (const id of ['sheet-to-schema', 'sheet-to-schema/node', 'sheet-to-schema/package.json']) require.resolve(id);
-console.log('  CJS: main entry, /node and package.json resolve and load');
+
+(async () => {
+  const csv = await node.readSheet({ stream: (async function* () { yield Buffer.from('Col1,Col2\\nval1,val2'); })() });
+  assert.equal(csv.format, 'csv');
+  assert.deepEqual(csv.headers, ['Col1', 'Col2']);
+  const rows = [];
+  for await (const row of csv.rows) rows.push(row);
+  assert.deepEqual(rows, [['val1', 'val2']]);
+  console.log('  CJS: main entry, /node and package.json resolve and load; CSV reads with no peers');
+})().catch(error => {
+  console.error(error);
+  process.exit(1);
+});
 `,
   );
 
@@ -89,6 +108,9 @@ for (const id of ['sheet-to-schema', 'sheet-to-schema/node']) assert.ok(import.m
 
 const csv = await readSheet({ stream: (async function* () { yield Buffer.from('Col1,Col2\\nval1,val2'); })() });
 assert.deepEqual(csv.headers, ['Col1', 'Col2']);
+const rows = [];
+for await (const row of csv.rows) rows.push(row);
+assert.deepEqual(rows, [['val1', 'val2']]);
 
 await assert.rejects(
   async () => {
@@ -149,6 +171,136 @@ try {
 console.log('  peers: exceljs reads a workbook; busboy and express serve an upload through createImportRouter');
 `,
   );
+
+  // Jest: CommonJS, no transform, no Node flags.
+  const jest = project('jest', { ...peers, jest: pkg.devDependencies.jest });
+  fs.copyFileSync(path.join(ROOT, 'test/fixtures/real-world/case1_1904_dates.xlsx'), path.join(jest, 'case1.xlsx'));
+  fs.writeFileSync(
+    path.join(jest, 'node.test.js'),
+    `
+const fs = require('node:fs');
+const path = require('node:path');
+const express = require('express');
+const { jsonSchemaAdapter } = require('sheet-to-schema');
+const { readSheet, createImportRouter } = require('sheet-to-schema/node');
+
+const bytes = fs.readFileSync(path.join(__dirname, 'case1.xlsx'));
+
+test('reads a workbook', async () => {
+  const sheet = await readSheet({ stream: (async function* () { yield bytes; })(), filename: 'case1.xlsx' });
+  expect(sheet.format).toBe('xlsx');
+  expect(sheet.headers).toEqual(['Name', 'BirthDate', 'JoinDate']);
+});
+
+test('receives an upload through createImportRouter', async () => {
+  const adapter = jsonSchemaAdapter({
+    type: 'object',
+    properties: { name: { type: 'string' }, birthDate: { type: 'string', format: 'date' } },
+  });
+  const written = [];
+  const app = express();
+  app.use('/import', createImportRouter(express.Router(), {
+    bindings: { people: { adapter, ctx: undefined } },
+    onImport: records => { written.push(...records); },
+  }));
+  const server = app.listen(0);
+  try {
+    const form = new FormData();
+    form.append('plan', JSON.stringify({ target: 'people', entries: [{ ref: 'name', column: 0 }, { ref: 'birthDate', column: 1 }] }));
+    form.append('file', new Blob([bytes]), 'case1.xlsx');
+    const response = await fetch('http://127.0.0.1:' + server.address().port + '/import/people/import', { method: 'POST', body: form });
+    const body = await response.json();
+    expect(response.status).toBe(200);
+    expect(body.imported).toBe(2);
+    expect(written).toEqual([
+      { name: 'Alice Mac', birthDate: '2026-05-15' },
+      { name: 'Bob Mac', birthDate: '1985-10-26' },
+    ]);
+  } finally {
+    server.close();
+  }
+});
+`,
+  );
+  run(process.execPath, [path.join(jest, 'node_modules/jest/bin/jest.js'), '--ci'], { cwd: jest, env: cleanEnv, stdio: 'inherit' });
+  console.log('  Jest: CommonJS, no Node flags; /node reads a workbook and receives an upload');
+
+  // The typings against each major of @types/express, with skipLibCheck off so the package's
+  // own .d.ts files are checked too.
+  for (const major of [4, 5]) {
+    const dir = project(`types-express${major}`, {
+      typescript: pkg.devDependencies.typescript,
+      '@types/node': pkg.devDependencies['@types/node'],
+      '@types/express': `^${major}`,
+    });
+    fs.writeFileSync(
+      path.join(dir, 'tsconfig.json'),
+      JSON.stringify({
+        compilerOptions: {
+          strict: true,
+          noEmit: true,
+          skipLibCheck: false,
+          target: 'ES2022',
+          module: 'ESNext',
+          moduleResolution: 'bundler',
+          esModuleInterop: true,
+          types: ['node'],
+        },
+        files: ['app.ts'],
+      }),
+    );
+    fs.writeFileSync(
+      path.join(dir, 'app.ts'),
+      `
+import express from 'express';
+import { jsonSchemaAdapter } from 'sheet-to-schema';
+import { createImportRouter, sendFailure, type ImportBinding, type ImportRequest } from 'sheet-to-schema/node';
+
+const adapter = jsonSchemaAdapter({ type: 'object', properties: { name: { type: 'string' } } });
+const people: ImportBinding = { adapter, ctx: undefined };
+const app = express();
+
+// As the README shows: the router goes straight to app.use.
+app.use('/import', createImportRouter(express.Router(), { bindings: { people }, onImport: async () => {} }));
+
+// A callback that wants the whole Express request annotates it, and the options take that type.
+interface WithTenant extends express.Request {
+  tenant?: string;
+}
+const tenantRouter: express.Router = createImportRouter(express.Router(), {
+  bindings: (name: string, request: WithTenant) => (request.tenant && name === 'people' ? people : undefined),
+  onImport: (records, { request }) => {
+    const tenant: string | undefined = request.tenant;
+    void [records, tenant];
+  },
+  lang: request => String(request.query['lang'] ?? 'en'),
+});
+app.use('/tenant', tenantRouter);
+
+// The README's form: an intersection, read again in onImport.
+declare function saveAll(tenant: string, records: Record<string, unknown>[]): Promise<void>;
+app.use(
+  '/readme',
+  createImportRouter(express.Router(), {
+    bindings: (name, request: express.Request & { tenant: string }) => (request.tenant ? people : undefined),
+    onImport: async (records, { request }) => saveAll(request.tenant, records),
+  }),
+);
+
+// An Express response is a response this package can answer on.
+app.use((error: unknown, _request: express.Request, response: express.Response, _next: express.NextFunction) => {
+  sendFailure(response, error);
+});
+
+// Nothing Express-specific is needed to describe a request.
+const contentType = (request: ImportRequest): string | undefined => request.headers['content-type'];
+void contentType;
+`,
+    );
+    run(process.execPath, [path.join(dir, 'node_modules/typescript/bin/tsc'), '-p', '.'], { cwd: dir, stdio: 'inherit' });
+    const version = JSON.parse(fs.readFileSync(path.join(dir, 'node_modules/@types/express/package.json'), 'utf8')).version;
+    console.log(`  typings: compile against @types/express@${version} with skipLibCheck off`);
+  }
 
   console.log('Consumer verification passed.');
 } finally {

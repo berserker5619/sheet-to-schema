@@ -1,4 +1,8 @@
 version: 2
+
+# The package declares no `dependencies`, only optional peers and devDependencies, so nothing
+# Dependabot finds here ships to a consumer. Majors are taken deliberately, by hand, as they are
+# in Dynamic Entity: each one can break the toolchain in a way a bot PR cannot repair.
 updates:
   - package-ecosystem: npm
     directory: /
@@ -6,6 +10,14 @@ updates:
       interval: weekly
       day: monday
     open-pull-requests-limit: 5
+    ignore:
+      - dependency-name: '*'
+        update-types: ['version-update:semver-major']
+      # Held to the lowest Node in `engines` (>=20), so the types never offer an API the
+      # oldest supported runtime lacks. Already covered by the rule above; stated so that
+      # relaxing that rule does not quietly move it.
+      - dependency-name: '@types/node'
+        versions: ['>=21']
 
   - package-ecosystem: github-actions
     directory: /
@@ -13,3 +25,6 @@ updates:
       interval: weekly
       day: monday
     open-pull-requests-limit: 3
+    ignore:
+      - dependency-name: '*'
+        update-types: ['version-update:semver-major']
