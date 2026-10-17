@@ -1,5 +1,5 @@
 /**
- * `exceljs` is an optional peer dependency (docs/phase2-plan.md, decision 3). This is what
+ * `exceljs` is an optional peer dependency (https://github.com/berserker5619/Dynamic-Entity/blob/main/docs/phase2-plan.md, decision 3). This is what
  * someone sees who reads a workbook without having installed it.
  *
  * The mock stands for the package not being there: it fails the way Node fails. It is in a

@@ -6,6 +6,12 @@ This project follows [Semantic Versioning](https://semver.org/spec/v2.0.0.html).
 
 ---
 
+## [1.0.0-rc.3]
+
+- **Moved to standalone repository**: `sheet-to-schema` is now developed in its own repository at [berserker5619/sheet-to-schema](https://github.com/berserker5619/sheet-to-schema). Development history prior to Phase 1 lives in the [Dynamic Entity repository](https://github.com/berserker5619/Dynamic-Entity).
+- **Minimum Node runtime**: Raised `engines.node` to `>=20`.
+- **Standalone test & fixture suites**: Real-world fixtures (Mac Excel 1904 dates, numeric identifiers past 2^53, complex sheet with merged cells and formulas) copied with automated validation suite.
+
 ## [1.0.0-rc.2]
 
 - **Unsafe integer guard**: When a numeric cell's absolute value exceeds `Number.MAX_SAFE_INTEGER` and its target is a string kind, generic adapters report `CELL_FORMAT`: `"too many digits to read exactly; format the column as Text in the source file"`. Numeric target fields are unchanged.

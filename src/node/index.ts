@@ -1,4 +1,4 @@
-// sheet-to-schema/node: everything that needs Node (docs/phase2-plan.md, "/node subpath").
+// sheet-to-schema/node: everything that needs Node (https://github.com/berserker5619/Dynamic-Entity/blob/main/docs/phase2-plan.md, "/node subpath").
 //
 // The main entry is browser-safe and has no runtime dependencies. What is here reads files and
 // serves HTTP, so it may use Node built-ins and the optional peers `exceljs` and `busboy`.

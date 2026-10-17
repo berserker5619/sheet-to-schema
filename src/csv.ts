@@ -1,7 +1,7 @@
 /**
  * csv.ts — RFC 4180 parse and emit, with no dependency.
  *
- * Moved from Dynamic Entity's `@dynamic-entity/core`, which re-exports it (docs/phase2-plan.md).
+ * Moved from Dynamic Entity's `@dynamic-entity/core`, which re-exports it (https://github.com/berserker5619/Dynamic-Entity/blob/main/docs/phase2-plan.md).
  *
  * Why this is here rather than left to the consumer: a spreadsheet import that needs a
  * parser installed before it does anything is a feature with a prerequisite. CSV is the

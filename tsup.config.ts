@@ -1,7 +1,7 @@
 import { defineConfig } from 'tsup';
 
 export default defineConfig({
-  // Two entries (docs/phase2-plan.md):
+  // Two entries (https://github.com/berserker5619/Dynamic-Entity/blob/main/docs/phase2-plan.md):
   // - the main one is browser-safe and has no runtime dependencies;
   // - `/node` reads files and serves HTTP, so it may use Node and its optional peers.
   entry: { index: 'src/index.ts', 'node/index': 'src/node/index.ts' },

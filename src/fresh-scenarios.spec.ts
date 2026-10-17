@@ -6,6 +6,7 @@ import {
   validatePlan,
   readPlan,
   parseCsv,
+  IMPORTER_VERSION,
   type MappingPlan,
 } from './index';
 import { collectedHeap } from './node/sheet.fixtures';
@@ -40,7 +41,7 @@ describe('fresh sheet-to-schema end-to-end scenarios', () => {
     };
 
     const adapter = jsonSchemaAdapter(employeeSchema);
-    expect(adapter.adapterVersion).toBe('1.0.0-rc.2');
+    expect(adapter.adapterVersion).toBe(IMPORTER_VERSION);
 
     // Sample raw spreadsheet table (header row + data rows)
     const headers = [
