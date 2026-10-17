@@ -8,13 +8,15 @@
  *
  * Which READMEs are published is asked of `npm pack --dry-run`, not assumed, so a README that
  * starts shipping is checked from then on. Pass package directories as arguments; the default
- * is the current directory. Fenced and inline code are skipped: a link written as an example
+ * is the current directory. An argument ending in `.md` is checked as that file instead, for a
+ * README that is copied into a build directory before it is published, so it can be checked
+ * before anything is built. Fenced and inline code are skipped: a link written as an example
  * of code is not a link.
  *
- * Usage: node scripts/check-readme-links.mjs [packageDir...]
+ * Usage: node scripts/check-readme-links.mjs [packageDir | README.md ...]
  */
 import { execFileSync } from 'node:child_process';
-import { existsSync, readFileSync } from 'node:fs';
+import { existsSync, readFileSync, statSync } from 'node:fs';
 import { dirname, join, relative, resolve } from 'node:path';
 
 // npm's own CLI through node: under `npm run` it is npm_execpath; run directly, it is the copy
@@ -62,8 +64,9 @@ function linksIn(line) {
 const dirs = process.argv.slice(2).length ? process.argv.slice(2) : ['.'];
 const problems = [];
 let checked = 0;
-for (const dir of dirs.map(d => resolve(d))) {
-  for (const file of publishedReadmes(dir)) {
+for (const target of dirs.map(d => resolve(d))) {
+  const files = /\.md$/i.test(target) && existsSync(target) && statSync(target).isFile() ? [target] : publishedReadmes(target);
+  for (const file of files) {
     checked++;
     withoutCode(readFileSync(file, 'utf8')).forEach((line, i) => {
       for (const target of linksIn(line)) {
