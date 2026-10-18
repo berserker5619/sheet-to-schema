@@ -12,14 +12,25 @@
  *   esbuild's `__require`), and there is no `import()` at all: Jest's module sandbox cannot run
  *   one without --experimental-vm-modules. In the ESM build it is loaded with `import()`.
  * - `/node` carries no copy of the main entry.
+ * - `/browser`: the main entry by name, and `exceljs` only inside the function that reads a
+ *   workbook (`require` in CommonJS, `import()` in ESM). No Node built-ins, no other peer, and
+ *   no copy of the main entry.
+ * - A CSV-only app bundled for a browser from `/browser` (esbuild, code splitting on) carries no
+ *   ExcelJS in the code it loads up front: ExcelJS is a separate chunk, fetched on first workbook.
  * - No published typings import `express` or `@types/express`.
+ *
+ * `scripts/check-bundle-selftest.mjs` proves each rule by planting a violation in a copy of
+ * `dist` and requiring this check to name it. `CHECK_BUNDLE_DIST` points this at that copy.
  */
-import { existsSync, readdirSync, readFileSync } from 'node:fs';
+import { existsSync, mkdtempSync, readdirSync, readFileSync, rmSync, writeFileSync } from 'node:fs';
 import { builtinModules } from 'node:module';
-import { join, relative } from 'node:path';
+import { tmpdir } from 'node:os';
+import { join, relative, resolve } from 'node:path';
+import { fileURLToPath } from 'node:url';
+import * as esbuild from 'esbuild';
 import ts from 'typescript';
 
-const DIST = join(process.cwd(), 'dist');
+const ROOT = process.cwd();
 const PEERS = ['exceljs', 'busboy', 'express'];
 const BUILTINS = new Set(builtinModules.flatMap(name => [name, `node:${name}`]));
 const isPeer = s => PEERS.some(peer => s === peer || s.startsWith(`${peer}/`));
@@ -61,71 +72,167 @@ function loadsOf(file) {
   return { text, loads };
 }
 
-const problems = [];
-const report = [];
+/** Every problem with the built entries in `dist`, and a one-line report of what each loads. */
+export async function checkBundle(dist) {
+  const problems = [];
+  const report = [];
 
-for (const name of ['index.js', 'index.mjs']) {
-  const file = join(DIST, name);
-  if (!existsSync(file)) {
-    problems.push(`${name} is missing: run build first.`);
-    continue;
-  }
-  const { loads } = loadsOf(file);
-  for (const load of loads) {
-    const why = BUILTINS.has(load.specifier) || isPeer(load.specifier) ? 'It must run in a browser.' : 'It must have zero runtime dependencies.';
-    problems.push(`the main entry (${name}) loads "${load.specifier}" with ${load.how}. ${why}`);
-  }
-  report.push(`${name}: ${loads.length} imports`);
-}
-
-for (const [name, format] of [['node/index.js', 'cjs'], ['node/index.mjs', 'esm']]) {
-  const file = join(DIST, name);
-  if (!existsSync(file)) {
-    problems.push(`${name} is missing: run build first.`);
-    continue;
-  }
-  const { text, loads } = loadsOf(file);
-  for (const load of loads) {
-    const { specifier, how, lazy } = load;
-    if (format === 'cjs' && how === 'import()') {
-      problems.push(`the CommonJS /node entry (${name}) has import("${specifier}"). Jest cannot run a dynamic import in CommonJS; load it with require.`);
+  for (const name of ['index.js', 'index.mjs']) {
+    const file = join(dist, name);
+    if (!existsSync(file)) {
+      problems.push(`${name} is missing: run build first.`);
       continue;
     }
-    if (isPeer(specifier)) {
-      const expected = format === 'cjs' ? ['require()', '__require()'] : ['import()'];
-      if (!lazy) problems.push(`the /node entry (${name}) loads the optional peer "${specifier}" at module scope (${how}). Load it inside the function that needs it.`);
-      else if (!expected.includes(how)) problems.push(`the /node entry (${name}) loads the optional peer "${specifier}" with ${how}; the ${format} build should use ${expected.join(' or ')}.`);
-    } else if (!BUILTINS.has(specifier) && specifier !== 'sheet-to-schema') {
-      problems.push(`the /node entry (${name}) loads "${specifier}", which is neither Node, an optional peer, nor the main entry.`);
+    const { loads } = loadsOf(file);
+    for (const load of loads) {
+      const why = BUILTINS.has(load.specifier) || isPeer(load.specifier) ? 'It must run in a browser.' : 'It must have zero runtime dependencies.';
+      problems.push(`the main entry (${name}) loads "${load.specifier}" with ${load.how}. ${why}`);
+    }
+    report.push(`${name}: ${loads.length} imports`);
+  }
+
+  for (const [name, format] of [['node/index.js', 'cjs'], ['node/index.mjs', 'esm']]) {
+    const file = join(dist, name);
+    if (!existsSync(file)) {
+      problems.push(`${name} is missing: run build first.`);
+      continue;
+    }
+    const { text, loads } = loadsOf(file);
+    for (const load of loads) {
+      const { specifier, how, lazy } = load;
+      if (format === 'cjs' && how === 'import()') {
+        problems.push(`the CommonJS /node entry (${name}) has import("${specifier}"). Jest cannot run a dynamic import in CommonJS; load it with require.`);
+        continue;
+      }
+      if (isPeer(specifier)) {
+        const expected = format === 'cjs' ? ['require()', '__require()'] : ['import()'];
+        if (!lazy) problems.push(`the /node entry (${name}) loads the optional peer "${specifier}" at module scope (${how}). Load it inside the function that needs it.`);
+        else if (!expected.includes(how)) problems.push(`the /node entry (${name}) loads the optional peer "${specifier}" with ${how}; the ${format} build should use ${expected.join(' or ')}.`);
+      } else if (!BUILTINS.has(specifier) && specifier !== 'sheet-to-schema') {
+        problems.push(`the /node entry (${name}) loads "${specifier}", which is neither Node, an optional peer, nor the main entry.`);
+      }
+    }
+    if (/class ImportFailure\b/.test(text)) {
+      problems.push(`the /node entry (${name}) carries its own copy of ImportFailure. Import the main entry as "sheet-to-schema".`);
+    }
+    const summary = loads.map(l => (isPeer(l.specifier) ? `${l.specifier} via ${l.how}${l.lazy ? ', lazy' : ''}` : l.specifier));
+    report.push(`${name}: ${[...new Set(summary)].sort().join(', ') || 'no imports'}`);
+  }
+
+  for (const [name, format] of [['browser/index.js', 'cjs'], ['browser/index.mjs', 'esm']]) {
+    const file = join(dist, name);
+    if (!existsSync(file)) {
+      problems.push(`${name} is missing: run build first.`);
+      continue;
+    }
+    const { text, loads } = loadsOf(file);
+    for (const { specifier, how, lazy } of loads) {
+      if (BUILTINS.has(specifier)) {
+        problems.push(`the /browser entry (${name}) loads the Node built-in "${specifier}". It must run in a browser.`);
+      } else if (specifier === 'exceljs') {
+        const expected = format === 'cjs' ? ['require()', '__require()'] : ['import()'];
+        if (!lazy) problems.push(`the /browser entry (${name}) loads "exceljs" at module scope (${how}). A CSV-only app must never download it: load it inside the function that reads a workbook.`);
+        else if (!expected.includes(how)) problems.push(`the /browser entry (${name}) loads "exceljs" with ${how}; the ${format} build should use ${expected.join(' or ')}.`);
+      } else if (specifier !== 'sheet-to-schema') {
+        problems.push(`the /browser entry (${name}) loads "${specifier}", which is neither exceljs nor the main entry.`);
+      }
+    }
+    if (/class ImportFailure\b/.test(text)) {
+      problems.push(`the /browser entry (${name}) carries its own copy of ImportFailure. Import the main entry as "sheet-to-schema".`);
+    }
+    const summary = loads.map(l => (l.specifier === 'exceljs' ? `exceljs via ${l.how}${l.lazy ? ', lazy' : ''}` : l.specifier));
+    report.push(`${name}: ${[...new Set(summary)].sort().join(', ') || 'no imports'}`);
+  }
+
+  if (existsSync(join(dist, 'browser/index.mjs')) && existsSync(join(dist, 'index.mjs'))) {
+    report.push(await checkCsvOnlyBundle(dist, problems));
+  }
+
+  const typings = [];
+  const walk = dir => {
+    for (const entry of readdirSync(dir, { withFileTypes: true })) {
+      const full = join(dir, entry.name);
+      if (entry.isDirectory()) walk(full);
+      else if (/\.d\.m?ts$/.test(entry.name)) typings.push(full);
+    }
+  };
+  if (existsSync(dist)) walk(dist);
+  for (const file of typings) {
+    const text = readFileSync(file, 'utf8');
+    if (/(?:from|import\(|require\()\s*['"](?:express|@types\/express)(?:\/[^'"]*)?['"]/.test(text) || /reference types=["']express/.test(text)) {
+      problems.push(`${relative(ROOT, file)} refers to express types. The published typings must stand without @types/express.`);
     }
   }
-  if (/class ImportFailure\b/.test(text)) {
-    problems.push(`the /node entry (${name}) carries its own copy of ImportFailure. Import the main entry as "sheet-to-schema".`);
-  }
-  const summary = loads.map(l => (isPeer(l.specifier) ? `${l.specifier} via ${l.how}${l.lazy ? ', lazy' : ''}` : l.specifier));
-  report.push(`${name}: ${[...new Set(summary)].sort().join(', ') || 'no imports'}`);
+  report.push(`${typings.length} typings free of express`);
+
+  return { problems, report };
 }
 
-const typings = [];
-const walk = dir => {
-  for (const entry of readdirSync(dir, { withFileTypes: true })) {
-    const full = join(dir, entry.name);
-    if (entry.isDirectory()) walk(full);
-    else if (/\.d\.m?ts$/.test(entry.name)) typings.push(full);
-  }
-};
-if (existsSync(DIST)) walk(DIST);
-for (const file of typings) {
-  const text = readFileSync(file, 'utf8');
-  if (/(?:from|import\(|require\()\s*['"](?:express|@types\/express)(?:\/[^'"]*)?['"]/.test(text) || /reference types=["']express/.test(text)) {
-    problems.push(`${relative(process.cwd(), file)} refers to express types. The published typings must stand without @types/express.`);
+/**
+ * Bundle a CSV-only browser app from `/browser`, as a consumer's bundler would (esbuild,
+ * `platform: 'browser'`, so `exceljs` resolves to its browser build), and check that the code it
+ * loads up front holds no ExcelJS. ExcelJS must be in a chunk of its own, or the check proves
+ * nothing.
+ */
+async function checkCsvOnlyBundle(dist, problems) {
+  const work = mkdtempSync(join(tmpdir(), 's2s-csv-bundle-'));
+  try {
+    const entry = join(work, 'app.mjs');
+    writeFileSync(entry, "import { readSheetFile } from 'sheet-to-schema/browser';\nexport const read = file => readSheetFile(file, { filename: file.name });\n");
+    let result;
+    try {
+      result = await esbuild.build({
+        entryPoints: [entry],
+        bundle: true,
+        splitting: true,
+        format: 'esm',
+        platform: 'browser',
+        outdir: join(work, 'out'),
+        write: false,
+        metafile: true,
+        logLevel: 'silent',
+        alias: { 'sheet-to-schema/browser': join(dist, 'browser/index.mjs'), 'sheet-to-schema': join(dist, 'index.mjs') },
+        nodePaths: [join(ROOT, 'node_modules')],
+      });
+    } catch (error) {
+      const why = (error.errors ?? []).map(e => e.text).join('; ') || error.message;
+      problems.push(`a CSV-only browser app does not bundle from /browser: ${why}`);
+      return 'CSV-only browser bundle: failed';
+    }
+    const byPath = result.metafile.outputs;
+    const outputs = Object.values(byPath);
+    const isExcel = input => /node_modules[\\/]exceljs[\\/]/.test(input);
+    const startPath = Object.keys(byPath).find(path => byPath[path].entryPoint);
+    // Up front is the entry and every chunk it imports statically, transitively: with splitting,
+    // a module both halves use lands in a shared chunk the entry loads before anything runs.
+    const loaded = new Set();
+    const pending = startPath ? [startPath] : [];
+    while (pending.length) {
+      const path = pending.pop();
+      if (loaded.has(path) || !byPath[path]) continue;
+      loaded.add(path);
+      for (const { path: next, kind } of byPath[path].imports) if (kind === 'import-statement') pending.push(next);
+    }
+    const upFront = [...loaded].flatMap(path => Object.keys(byPath[path].inputs)).filter(isExcel);
+    const anywhere = outputs.some(output => Object.keys(output.inputs).some(isExcel));
+    const start = startPath ? { bytes: [...loaded].reduce((sum, path) => sum + byPath[path].bytes, 0) } : undefined;
+    if (upFront.length) {
+      problems.push(`a CSV-only browser app bundled from /browser carries ExcelJS in the code it loads up front (${upFront[0]}). It must be a chunk fetched on the first workbook.`);
+    } else if (!anywhere) {
+      problems.push('a CSV-only browser app bundled from /browser has no ExcelJS chunk at all, so this check proves nothing: the workbook path is not reachable.');
+    }
+    return `CSV-only browser bundle: ${((start?.bytes ?? 0) / 1024).toFixed(1)} KB up front, ExcelJS in a lazy chunk`;
+  } finally {
+    rmSync(work, { recursive: true, force: true });
   }
 }
-report.push(`${typings.length} typings free of express`);
 
-if (problems.length) {
-  console.error('Bundle check failed:\n');
-  for (const problem of problems) console.error(`  - ${problem}`);
-  process.exit(1);
+if (process.argv[1] && resolve(process.argv[1]) === fileURLToPath(import.meta.url)) {
+  const { problems, report } = await checkBundle(process.env.CHECK_BUNDLE_DIST ?? join(ROOT, 'dist'));
+  if (problems.length) {
+    console.error('Bundle check failed:\n');
+    for (const problem of problems) console.error(`  - ${problem}`);
+    process.exit(1);
+  }
+  console.log(`Bundle check passed (${report.join('; ')}).`);
 }
-console.log(`Bundle check passed (${report.join('; ')}).`);
