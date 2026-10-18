@@ -18,11 +18,10 @@
  *    cell could not be read is not also called required.
  */
 import type { CellOptions, CoerceOutcome, ImportTarget, SchemaAdapter, TargetSet, ValueKind } from './adapter.types';
-import { cellText } from './cell-text';
 import { coerceValue } from './coerce';
 import type { DateOrder } from './date-order';
-import { ImportFailure } from './import-failure';
-import type { GroupSpec, NormalizedPlan, PlanProblem } from './plan.types';
+import { GroupAccumulator, type Group } from './group-accumulator';
+import type { NormalizedPlan, PlanProblem } from './plan.types';
 import { planSlots, slotOf } from './plan-slots';
 import { readPlan } from './read-plan';
 import { getRecordValue, isEmptyValue, setRecordValue } from './record-path';
@@ -147,73 +146,6 @@ function mergeProblems(problems: ImportRowError[]): ImportRowError[] {
     merged.set(key, { ...known, row: rows[0], rows });
   }
   return [...merged.values()];
-}
-
-/** The rows of one record. A keyless group is a row with a blank key, imported on its own. */
-interface Group {
-  keyless: boolean;
-  members: MappedRow[];
-}
-
-/**
- * Rows into groups (§5). A key is the tuple of trimmed `cellText` at the key columns, compared
- * as a tuple, so `["a|b", "c"]` and `["a", "b|c"]` are two keys. A row whose key cells are all
- * blank is its own group and never merged.
- *
- * Contiguous (the default): a group is a run of adjacent rows, and a key that comes back after
- * its run closed fails the whole import, naming the key and both rows. Otherwise rows of one
- * key gather wherever they are, in sheet order, and groups keep the order they first appear in.
- */
-function groupRows(mapped: MappedRow[], group: Required<GroupSpec>): Group[] {
-  const groups: Group[] = [];
-  const open = new Map<string, Group>();
-  const closed = new Map<string, number>();
-  // Asserted, not annotated: it is reassigned inside close(), which narrowing cannot see.
-  let current = null as { key: string; group: Group } | null;
-
-  const close = (): void => {
-    if (current) closed.set(current.key, current.group.members[current.group.members.length - 1].rowNumber);
-    current = null;
-  };
-
-  for (const row of mapped) {
-    const tuple = group.key.map(column => cellText(row.cells[column]).trim());
-    if (tuple.every(part => part === '')) {
-      if (group.contiguous) close();
-      groups.push({ keyless: true, members: [row] });
-      continue;
-    }
-    const key = JSON.stringify(tuple);
-
-    if (!group.contiguous) {
-      const existing = open.get(key);
-      if (existing) existing.members.push(row);
-      else {
-        const fresh: Group = { keyless: false, members: [row] };
-        open.set(key, fresh);
-        groups.push(fresh);
-      }
-      continue;
-    }
-
-    if (current?.key === key) {
-      current.group.members.push(row);
-      continue;
-    }
-    close();
-    const lastRow = closed.get(key);
-    if (lastRow !== undefined) {
-      throw new ImportFailure(
-        'GROUP_NOT_CONTIGUOUS',
-        `The rows for group ${tuple.join(' / ')} are not together: the group ended at row ${lastRow} and starts again at row ${row.rowNumber}. Sort the sheet by the key columns.`,
-        { key: tuple, rows: [lastRow, row.rowNumber] },
-      );
-    }
-    const fresh: Group = { keyless: false, members: [row] };
-    groups.push(fresh);
-    current = { key, group: fresh };
-  }
-  return groups;
 }
 
 /**
@@ -389,7 +321,7 @@ export function applyMapping<TMeta, TCtx>(
   };
 
   /** §5: one record from a group's rows. First row wins, later blanks are ignored, items append. */
-  const buildGroup = ({ keyless, members }: Group): void => {
+  const buildGroup = ({ keyless, members }: Group<MappedRow>): void => {
     const record: Record<string, unknown> = {};
     const origin = new Map<string, number>();
     const rowNumbers = members.map(member => member.rowNumber);
@@ -451,8 +383,14 @@ export function applyMapping<TMeta, TCtx>(
     else skipped++;
   });
 
-  if (group) for (const members of groupRows(mapped, group)) buildGroup(members);
-  else for (const row of mapped) finish(row.parent, [row.rowNumber], row.errors, [], new Set(row.unread));
+  if (group) {
+    // Every row is grouped before any record is built, as before the accumulator existed: a
+    // contiguity failure stops the run before an adapter's finalize or validate has been called.
+    const accumulator = new GroupAccumulator<MappedRow>(group);
+    const groups = mapped.flatMap(row => accumulator.push(row));
+    groups.push(...accumulator.finish());
+    for (const members of groups) buildGroup(members);
+  } else for (const row of mapped) finish(row.parent, [row.rowNumber], row.errors, [], new Set(row.unread));
 
   return {
     records,
