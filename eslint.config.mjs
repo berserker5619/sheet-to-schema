@@ -5,7 +5,8 @@ import tseslint from 'typescript-eslint';
 
 export default tseslint.config(
   {
-    ignores: ['**/dist/', '**/node_modules/', '**/*.js.map', '**/coverage/'],
+    // test-harness/ runs against the published package in projects of its own, not here.
+    ignores: ['**/dist/', '**/node_modules/', '**/*.js.map', '**/coverage/', 'test-harness/'],
   },
 
   {
