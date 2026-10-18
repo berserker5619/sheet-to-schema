@@ -21,7 +21,6 @@ import {
   cellText,
   createCsvReader,
   detectDelimiter,
-  padRow,
   type CsvDelimiter,
   type CsvReader,
 } from 'sheet-to-schema';
@@ -29,6 +28,7 @@ import { destroySource, limitBytes, peek, toByteStream, type ByteSource } from '
 import { ImportError } from './errors';
 import { resolveLimits, type ImportLimits } from './limits';
 import { xlsxRows } from './xlsx-source';
+import { guardHeaders, guardRow } from '../shared/sheet-guards';
 import { detectFormat, MAGIC_BYTES, type SheetFormat } from '../shared/sheet-format';
 
 // Sniffing is shared with the browser reader, which must refuse exactly what this refuses.
@@ -114,9 +114,8 @@ async function* csvRows(
 /**
  * Enforce the row, column and cell bounds as rows go past, and pad short rows.
  *
- * Padding matches `parseCsv`, through the same `padRow` the main entry exports, so a file imported on a
- * server and the same file imported in a browser produce the same rows. A second padding rule
- * here would be a place for the two halves to disagree, silently, about a row that ended early.
+ * The checks and the padding are `shared/sheet-guards.ts`, which the browser reader runs too: a
+ * second copy here would be a place for the two halves to disagree, silently, about a row.
  */
 export async function* guardRows(
   rows: AsyncIterable<unknown[]>,
@@ -124,30 +123,7 @@ export async function* guardRows(
   limits: ImportLimits,
 ): AsyncGenerator<unknown[]> {
   let seen = 0;
-
-  for await (const row of rows) {
-    if (++seen > limits.maxRows) {
-      throw new ImportError(
-        'SHEET_TOO_LARGE',
-        `The sheet has more than ${limits.maxRows} rows.`,
-      );
-    }
-    if (row.length > limits.maxColumns) {
-      throw new ImportError(
-        'SHEET_TOO_LARGE',
-        `Row ${seen + 1} has more than ${limits.maxColumns} columns.`,
-      );
-    }
-    for (const cell of row) {
-      if (typeof cell === 'string' && cell.length > limits.maxCellLength) {
-        throw new ImportError(
-          'SHEET_TOO_LARGE',
-          `A cell in row ${seen + 1} is longer than ${limits.maxCellLength} characters.`,
-        );
-      }
-    }
-    yield padRow(row, width);
-  }
+  for await (const row of rows) yield guardRow(row, ++seen, width, limits);
 }
 
 /**
@@ -175,12 +151,7 @@ export async function readSheet(options: ReadSheetOptions): Promise<SheetSource>
     // cell that is somehow a date reads the same on both sides.
     const headers = first.done ? [] : first.value.map(cellText);
 
-    if (headers.length > limits.maxColumns) {
-      throw new ImportError(
-        'SHEET_TOO_LARGE',
-        `The sheet has more than ${limits.maxColumns} columns.`,
-      );
-    }
+    guardHeaders(headers, limits);
 
     const remaining = drain(iterator);
     return {

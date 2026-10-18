@@ -146,4 +146,32 @@ export default tseslint.config(
       ],
     },
   },
+
+  {
+    // `/browser` runs in a browser: no Node built-ins, the main entry by name, `/node` never,
+    // and `exceljs` only as a type (it is loaded with `import()` inside the function that reads
+    // a workbook, which `npm run check:bundle` holds the built entry to).
+    files: ['src/browser/**/*.ts'],
+    ignores: ['**/*.spec.ts', '**/*.fixtures.ts'],
+    rules: {
+      'no-restricted-imports': [
+        'error',
+        {
+          patterns: [
+            {
+              group: ['@dynamic-entity/*', 'ngx-dynamic-entity', 'ngx-dynamic-entity-builder'],
+              message: 'sheet-to-schema must not depend on Dynamic Entity.',
+            },
+            {
+              group: ['../*', '!../shared', '!../shared/*'],
+              message: 'Import the main entry as "sheet-to-schema", and never /node. ../shared is the exception: it is not the main entry.',
+            },
+            { group: ['node:*', 'fs', 'path', 'stream', 'zlib', 'crypto', 'http', 'https', 'buffer'], message: '/browser runs in a browser: no Node built-ins.' },
+            { group: ['busboy', 'express'], message: '/browser runs in a browser: these packages only Node has.' },
+            { group: ['exceljs'], allowTypeImports: true, message: '/browser loads exceljs with import() when a workbook is read, never statically.' },
+          ],
+        },
+      ],
+    },
+  },
 );

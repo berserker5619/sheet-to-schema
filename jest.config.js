@@ -3,7 +3,7 @@ module.exports = {
   testEnvironment: 'node',
   testMatch: ['<rootDir>/src/**/*.spec.ts'],
   // Coverage is measured on shipped source only: barrels and specs are excluded.
-  collectCoverageFrom: ['src/**/*.ts', '!src/**/*.spec.ts', '!src/**/*.fixtures.ts', '!src/index.ts', '!src/node/index.ts'],
+  collectCoverageFrom: ['src/**/*.ts', '!src/**/*.spec.ts', '!src/**/*.fixtures.ts', '!src/index.ts', '!src/node/index.ts', '!src/browser/index.ts'],
   coverageReporters: ['text-summary', 'lcov'],
   // Per-file, not aggregate. Every file must clear its threshold individually so regressions cannot hide behind averages.
   // Two bars. The main entry was written for this package and is held to its own. What is
@@ -14,6 +14,7 @@ module.exports = {
     './src/node/**/*.ts': { statements: 90, branches: 80, functions: 100, lines: 90 },
     // Shared by the server's readers and the browser reader, and written for this package.
     './src/shared/**/*.ts': { statements: 95, branches: 90, functions: 100, lines: 95 },
+    './src/browser/**/*.ts': { statements: 95, branches: 90, functions: 100, lines: 95 },
   },
   testTimeout: 60_000,
   modulePathIgnorePatterns: ['<rootDir>/dist/'],

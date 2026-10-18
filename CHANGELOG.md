@@ -10,6 +10,12 @@ This project follows [Semantic Versioning](https://semver.org/spec/v2.0.0.html).
 
 ### Added
 
+- `sheet-to-schema/browser`: `readSheetFile` reads a CSV, TSV or `.xlsx` file (a `File`,
+  `Blob`, `ArrayBuffer` or `Uint8Array`) into exactly the grid the server's `readSheet` reads
+  from the same bytes, with the server's limits, error codes and messages; `readXlsx` does the
+  same for a workbook. `exceljs` stays an optional peer, loaded only when a workbook is read.
+  The server and browser readers share their format sniffing, zip part selection, cell rules,
+  limits and row checks, so they agree by construction.
 - `GroupLimits` and `DEFAULT_GROUP_LIMITS` in the main entry: `maxGroupRows` (10,000),
   `maxGroups` (200,000) and `maxGroupKeyBytes` (8 MiB), and an `applyMapping` option,
   `groupLimits`, to override them.

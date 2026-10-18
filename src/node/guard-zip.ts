@@ -32,66 +32,27 @@
 import zlib from 'node:zlib';
 import { ImportError } from './errors';
 import type { ImportLimits } from './limits';
+import {
+  CENTRAL_HEADER,
+  DEFLATED,
+  HAS_DATA_DESCRIPTOR,
+  HEADER_SIZE,
+  LOCAL_HEADER,
+  PartPicker,
+  RATIO_FLOOR,
+  refuse,
+  repack,
+  STORED,
+  ZIP64_SENTINEL,
+} from '../shared/zip';
 
-/** `PK\x03\x04` — the start of a local file header. */
-const LOCAL_HEADER = 0x04034b50;
-/** `PK\x01\x02` — a central directory record. */
-const CENTRAL_HEADER = 0x02014b50;
-/** `PK\x05\x06` — the end-of-central-directory record. */
-const END_OF_CENTRAL = 0x06054b50;
 /** `PK\x07\x08` — the optional signature on a data descriptor. */
 const DATA_DESCRIPTOR = 0x08074b50;
-/** Bytes in a local file header before the name. */
-const HEADER_SIZE = 30;
-/** Bit 3 of the general-purpose flags: sizes follow the data rather than preceding it. */
-const HAS_DATA_DESCRIPTOR = 0x08;
-/** A size of exactly this means "see the zip64 extra field", which is a size we do not trust. */
-const ZIP64_SENTINEL = 0xffffffff;
 /** How much is handed to the inflater at once. Bounds the push-back after a stream ends. */
 const SLICE = 64 * 1024;
 
-const STORED = 0;
-const DEFLATED = 8;
-
 /** The largest size a non-zip64 header can express. */
 const ZIP32_MAX = 0xffffffff;
-
-/**
- * The parts an import reads, in the order exceljs must meet them.
- *
- * Relationships, the workbook and the shared strings before any worksheet — that ordering is
- * what keeps exceljs off its deferral path. Everything not named here, and every worksheet
- * after the first, is dropped.
- */
-const WANTED = [
-  '[Content_Types].xml',
-  '_rels/.rels',
-  'xl/_rels/workbook.xml.rels',
-  'xl/workbook.xml',
-  'xl/styles.xml',
-  'xl/sharedStrings.xml',
-];
-
-const WORKSHEET = /^xl\/worksheets\/sheet(\d+)\.xml$/;
-
-/**
- * The number in `sheetN.xml`, or `null` for anything that is not a worksheet.
- *
- * **Which worksheet an import reads is never decided by byte order.** A user means the first
- * *tab*, and an archive may list `sheet2.xml` before `sheet1.xml`.
- *
- * The lowest number is not *quite* tab order either: the real order lives in `workbook.xml`'s
- * `<sheets>` and the relationship map, which this does not parse. It is a great deal closer
- * than byte order, and it is the same number exceljs matches a worksheet by.
- */
-function sheetNumber(name: string): number | null {
-  const match = WORKSHEET.exec(name);
-  return match ? Number(match[1]) : null;
-}
-
-const refuse = (message: string): never => {
-  throw new ImportError('ARCHIVE_REFUSED', message);
-};
 
 // ─── CRC-32, because a rebuilt entry needs a checksum the reader will accept ──────────────
 
@@ -251,7 +212,7 @@ async function readDeflated(
     // Measured against what has actually been read, so an unfinished entry cannot hide behind
     // a ratio that would only be computed at the end. The floor keeps a tiny entry, where the
     // deflate header alone dominates, from tripping it.
-    if (produced > 64 * 1024 && produced / Math.max(consumed, 1) > limits.maxCompressionRatio) {
+    if (produced > RATIO_FLOOR && produced / Math.max(consumed, 1) > limits.maxCompressionRatio) {
       return new ImportError(
         'ARCHIVE_REFUSED',
         `An entry in the workbook inflates more than ${limits.maxCompressionRatio} times — refusing it.`,
@@ -392,54 +353,6 @@ async function skipDescriptor(scanner: ZipScanner): Promise<void> {
   if (await scanner.need(base + 12)) scanner.take(base + 12);
 }
 
-// ─── Writing ──────────────────────────────────────────────────────────────────────────────
-
-/** Repack the kept entries as a zip, in the order the parser needs to meet them. */
-function repack(entries: Entry[]): Buffer {
-  const parts: Buffer[] = [];
-  const directory: Buffer[] = [];
-  let offset = 0;
-
-  for (const entry of entries) {
-    const name = Buffer.from(entry.name, 'utf8');
-
-    const local = Buffer.alloc(HEADER_SIZE);
-    local.writeUInt32LE(LOCAL_HEADER, 0);
-    local.writeUInt16LE(20, 4); // version needed
-    local.writeUInt16LE(0, 6); // flags: sizes are right here, so no data descriptor
-    local.writeUInt16LE(entry.method, 8);
-    local.writeUInt32LE(entry.crc, 14);
-    local.writeUInt32LE(entry.data.length, 18);
-    local.writeUInt32LE(entry.inflated, 22);
-    local.writeUInt16LE(name.length, 26);
-    parts.push(local, name, entry.data);
-
-    const central = Buffer.alloc(46);
-    central.writeUInt32LE(CENTRAL_HEADER, 0);
-    central.writeUInt16LE(20, 4); // version made by
-    central.writeUInt16LE(20, 6); // version needed
-    central.writeUInt16LE(entry.method, 10);
-    central.writeUInt32LE(entry.crc, 16);
-    central.writeUInt32LE(entry.data.length, 20);
-    central.writeUInt32LE(entry.inflated, 24);
-    central.writeUInt16LE(name.length, 28);
-    central.writeUInt32LE(offset, 42);
-    directory.push(central, name);
-
-    offset += local.length + name.length + entry.data.length;
-  }
-
-  const directoryBytes = Buffer.concat(directory);
-  const end = Buffer.alloc(22);
-  end.writeUInt32LE(END_OF_CENTRAL, 0);
-  end.writeUInt16LE(entries.length, 8);
-  end.writeUInt16LE(entries.length, 10);
-  end.writeUInt32LE(directoryBytes.length, 12);
-  end.writeUInt32LE(offset, 16);
-
-  return Buffer.concat([...parts, directoryBytes, end]);
-}
-
 /**
  * Walk an archive under every archive-shaped bound, and return the parts an import needs.
  *
@@ -452,9 +365,8 @@ export async function guardZip(
 ): Promise<Buffer> {
   const scanner = new ZipScanner(source[Symbol.asyncIterator]());
   const budget: Budget = { total: 0, retained: 0, entries: 0 };
-  const kept = new Map<string, Entry>();
-  /** The lowest-numbered worksheet seen so far, which is the one an import reads. */
-  let sheet: { name: string; number: number } | null = null;
+  /** The wanted parts and the lowest-numbered worksheet seen so far: the ones an import reads. */
+  const picker = new PartPicker<Entry>();
 
   for (;;) {
     if (!(await scanner.need(4))) break;
@@ -484,21 +396,13 @@ export async function guardZip(
     // One worksheet and no other: a mapping plan addresses one sheet's columns, and carrying
     // the rest would be holding data nothing reads. Which one is decided by `sheetNumber`
     // rather than by the order the archive happens to list them in — see that function.
-    const number = sheetNumber(name);
-    const keep =
-      number === null
-        ? WANTED.includes(name) && !kept.has(name)
-        : sheet === null || number < sheet.number;
+    const { keep, released } = picker.wants(name);
 
     // The superseded sheet goes **before** the new one is read, not after. Releasing it
     // afterwards means holding two at once at the moment of changeover, which makes the
     // retention bound depend on the order the archive lists its sheets in: the same workbook
     // sails through ascending and is refused descending.
-    if (keep && number !== null && sheet) {
-      budget.retained -= kept.get(sheet.name)?.data.length ?? 0;
-      kept.delete(sheet.name);
-      sheet = null;
-    }
+    if (released) budget.retained -= released.data.length;
 
     const streamed = (flags & HAS_DATA_DESCRIPTOR) !== 0 || declaredCompressed === ZIP64_SENTINEL;
     let read: { data: Buffer; inflated: number; crc: number };
@@ -532,27 +436,10 @@ export async function guardZip(
       if (read.data.length > ZIP32_MAX || read.inflated > ZIP32_MAX) {
         refuse(`Entry "${name}" is too large to repack without zip64.`);
       }
-      kept.set(name, { name, method, data: read.data, inflated: read.inflated, crc: read.crc });
-      if (number !== null) sheet = { name, number };
+      picker.keep(name, { name, method, data: read.data, inflated: read.inflated, crc: read.crc });
     }
   }
 
-  if (!sheet) {
-    // Any zip starts `PK`, so a `.docx` or a plain archive reaches here too. Without a workbook
-    // part it is not a broken workbook but a different kind of file, and saying so is what
-    // tells the user to export the right thing rather than to repair this one.
-    if (!kept.has('xl/workbook.xml')) {
-      throw new ImportError(
-        'UNSUPPORTED_FORMAT',
-        'This is a zip archive that is not an Excel workbook. Upload an .xlsx or .csv file.',
-      );
-    }
-    throw new ImportError('MALFORMED_FILE', 'This workbook has no worksheet.');
-  }
-
-  const ordered = [...WANTED, sheet.name]
-    .map(wanted => kept.get(wanted))
-    .filter((entry): entry is Entry => entry !== undefined);
-
-  return repack(ordered);
+  const archive = repack(picker.ordered());
+  return Buffer.from(archive.buffer, archive.byteOffset, archive.byteLength);
 }

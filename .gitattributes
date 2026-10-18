@@ -1,2 +1,7 @@
 * text=auto eol=lf
 *.xlsx binary
+# Real-world inputs are kept byte for byte: an Excel CSV ends its lines in CRLF and may start
+# with a byte-order mark, and normalizing either away would test a file Excel never wrote.
+test/fixtures/real-world/*.csv binary
+test/fixtures/parity/*.csv binary
+test/fixtures/parity/*.tsv binary

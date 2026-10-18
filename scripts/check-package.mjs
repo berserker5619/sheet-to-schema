@@ -25,7 +25,7 @@ if (pkg.engines?.node !== '>=20') {
   problems.push(`engines.node must be ">=20", was "${pkg.engines?.node}"`);
 }
 
-for (const exp of ['.', './node']) {
+for (const exp of ['.', './node', './browser']) {
   const entry = pkg.exports[exp];
   for (const [key, rel] of Object.entries(entry)) {
     if (!existsSync(join(ROOT, rel))) {

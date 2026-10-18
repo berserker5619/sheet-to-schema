@@ -19,6 +19,11 @@
       "import": "./dist/node/index.mjs",
       "require": "./dist/node/index.js"
     },
+    "./browser": {
+      "types": "./dist/browser/index.d.ts",
+      "import": "./dist/browser/index.mjs",
+      "require": "./dist/browser/index.js"
+    },
     "./package.json": "./package.json"
   },
   "engines": {
@@ -33,7 +38,8 @@
     "check:package": "node scripts/check-package.mjs",
     "check:timezones": "node scripts/check-timezones.mjs",
     "check:consumer": "node scripts/verify-consumer.mjs",
-    "regenerate:fixtures": "node test/fixtures/real-world/generate-fixtures.mjs"
+    "regenerate:fixtures": "node test/fixtures/real-world/generate-fixtures.mjs",
+    "regenerate:parity-fixtures": "node test/fixtures/parity/generate-parity-fixtures.mjs"
   },
   "peerDependencies": {
     "busboy": "^1.6.0",
@@ -52,23 +58,24 @@
     }
   },
   "devDependencies": {
+    "@eslint/js": "^10.0.1",
     "@types/busboy": "^1.5.4",
     "@types/express": "^5.0.6",
     "@types/jest": "^30.0.0",
     "@types/node": "^20.14.0",
     "@types/supertest": "^6.0.3",
     "busboy": "1.6.0",
+    "eslint": "^10.11.0",
     "exceljs": "4.4.0",
     "express": "^5.2.1",
+    "globals": "^17.12.0",
     "jest": "^30.0.0",
+    "jest-environment-jsdom": "^30.5.2",
     "jszip": "^3.10.2",
     "supertest": "^7.2.2",
     "ts-jest": "^29.4.14",
     "tsup": "^8.0.0",
     "typescript": "~5.9.3",
-    "@eslint/js": "^10.0.1",
-    "eslint": "^10.11.0",
-    "globals": "^17.12.0",
     "typescript-eslint": "^8.70.1"
   },
   "license": "MIT",

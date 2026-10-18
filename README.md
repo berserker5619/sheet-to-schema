@@ -11,6 +11,8 @@ one record per row, or per group of rows, reporting every cell it could not use.
   with memory bounded by a batch, and serves the import over HTTP.
 - **The same engine on both sides.** A file imports to the same records in the browser and
   on the server, because both run the same function over the same plan.
+- **The same reader on both sides.** `sheet-to-schema/browser` reads a CSV, TSV or `.xlsx`
+  file in a browser into exactly the rows the server reads from the same bytes.
 
 > **Status: stable (1.0.0).** It is the import engine of
 > [Dynamic Entity](https://github.com/berserker5619/Dynamic-Entity#readme) 3.0, extracted so it can be used without it.
@@ -20,8 +22,8 @@ one record per row, or per group of rows, reporting every cell it could not use.
 
 ```bash
 npm install sheet-to-schema
-# Only for sheet-to-schema/node, and only the ones you use:
-npm install exceljs   # to read or write .xlsx
+# Only for sheet-to-schema/node and /browser, and only the ones you use:
+npm install exceljs   # to read or write .xlsx (on a server or in a browser)
 npm install busboy    # to receive uploads
 npm install express   # for the ready-made router
 ```
@@ -164,6 +166,34 @@ For anything else, implement `SchemaAdapter`: `id`, `adapterVersion`, and
 `targets({ slots, lang })`, which lists every place a value can go. Optional hooks let it read
 its own cells (`coerce`), finish a record (`finalize`) and check one (`validate`). That is how
 Dynamic Entity's form configs run on this engine.
+
+## In a browser: `sheet-to-schema/browser`
+
+```ts
+import { applyMapping, decimalMarkFor } from 'sheet-to-schema';
+import { readSheetFile } from 'sheet-to-schema/browser';
+
+// `file` from an <input type="file">: a CSV, a TSV or an .xlsx, decided by its bytes.
+const sheet = await readSheetFile(file, { filename: file.name });
+const result = applyMapping(sheet.rows, plan, adapter, undefined, { decimal: decimalMarkFor(sheet.delimiter) });
+```
+
+`readSheetFile` returns the grid the server's `readSheet` reads from the same file: the same
+headers, the same rows with the same typed cells (a date cell is a `Date`, a formula is its
+cached result), the same separator, and the same refusals, with the server's error codes and
+messages. Pass `sheet.delimiter` to `decimalMarkFor`, as the server does, so a semicolon file
+reads `1,5` as 1.5 on both sides. `readXlsx` is the same for a caller that already knows the
+file is a workbook.
+
+- **A CSV needs nothing installed.** `exceljs` is loaded with `import()` the first time a
+  workbook is read, so a CSV-only app never downloads it. Without it, a workbook fails with
+  what to install.
+- **The limits are the server's**, with its defaults: `maxBytes`, `maxRows`, `maxColumns`,
+  `maxCellLength` and `maxZipEntries`, through `limits`.
+- **A workbook's zip is checked by what it declares** (entry count, sizes, compression ratio)
+  before ExcelJS sees it. The server also checks what each entry actually inflates to; the
+  browser does not, because there the file is the user's own and only their tab is at risk.
+- **The first sheet, header row 1**, as on the server.
 
 ## On a server: `sheet-to-schema/node`
 
