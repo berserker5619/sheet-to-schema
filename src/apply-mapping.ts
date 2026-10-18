@@ -21,6 +21,7 @@ import type { CellOptions, CoerceOutcome, ImportTarget, SchemaAdapter, TargetSet
 import { coerceValue } from './coerce';
 import type { DateOrder } from './date-order';
 import { GroupAccumulator, type Group } from './group-accumulator';
+import { resolveGroupLimits, type GroupLimits } from './group-limits';
 import type { NormalizedPlan, PlanProblem } from './plan.types';
 import { planSlots, slotOf } from './plan-slots';
 import { readPlan } from './read-plan';
@@ -39,6 +40,11 @@ export interface ApplyMappingOptions {
    * neither, a date that reads two ways is refused (§8).
    */
   dateOrder?: DateOrder;
+  /**
+   * Overrides for the grouping limits. Each one left out, or not a positive number, is its
+   * default (`DEFAULT_GROUP_LIMITS`).
+   */
+  groupLimits?: Partial<GroupLimits>;
 }
 
 export interface PreparedPlan {
@@ -152,7 +158,8 @@ function mergeProblems(problems: ImportRowError[]): ImportRowError[] {
  * Turn rows into records. `plan` may be anything a plan arrived as: it is read, upgraded and
  * validated here, and an `error` among those stops the run before the first row is read.
  *
- * Throws `ImportFailure` (`GROUP_NOT_CONTIGUOUS`) when a contiguous group's key comes back.
+ * Throws `ImportFailure` when a contiguous group's key comes back (`GROUP_NOT_CONTIGUOUS`), or
+ * when grouping passes one of `options.groupLimits` (`GROUP_TOO_LARGE`, `TOO_MANY_GROUPS`).
  */
 export function applyMapping<TMeta, TCtx>(
   rows: readonly (readonly unknown[])[],
@@ -386,7 +393,7 @@ export function applyMapping<TMeta, TCtx>(
   if (group) {
     // Every row is grouped before any record is built, as before the accumulator existed: a
     // contiguity failure stops the run before an adapter's finalize or validate has been called.
-    const accumulator = new GroupAccumulator<MappedRow>(group);
+    const accumulator = new GroupAccumulator<MappedRow>(group, resolveGroupLimits(options.groupLimits));
     const groups = mapped.flatMap(row => accumulator.push(row));
     groups.push(...accumulator.finish());
     for (const members of groups) buildGroup(members);

@@ -6,6 +6,23 @@ This project follows [Semantic Versioning](https://semver.org/spec/v2.0.0.html).
 
 ---
 
+## [Unreleased]
+
+### Added
+
+- `GroupLimits` and `DEFAULT_GROUP_LIMITS` in the main entry: `maxGroupRows` (10,000),
+  `maxGroups` (200,000) and `maxGroupKeyBytes` (8 MiB), and an `applyMapping` option,
+  `groupLimits`, to override them.
+
+### Changed
+
+- `applyMapping` enforces the group limits: `maxGroupRows` and `maxGroups` in both grouping
+  modes, `maxGroupKeyBytes` for contiguous groups. A grouped sheet past a default throws an
+  `ImportFailure` (`GROUP_TOO_LARGE` or `TOO_MANY_GROUPS`) where 1.0 imported it; pass
+  `groupLimits` to raise the limit.
+
+---
+
 ## [1.0.0]
 
 The first stable release. The code is identical to 1.0.0-rc.3; only the version changed.

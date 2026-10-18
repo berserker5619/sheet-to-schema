@@ -1,4 +1,5 @@
 import { GroupAccumulator, type Group, type GroupableRow } from './group-accumulator';
+import { DEFAULT_GROUP_LIMITS, resolveGroupLimits, utf8Length } from './group-limits';
 import { ImportFailure } from './import-failure';
 
 const row = (rowNumber: number, ...cells: unknown[]): GroupableRow => ({ rowNumber, cells });
@@ -59,5 +60,18 @@ describe('GroupAccumulator', () => {
       expect(rowsOf(accumulator.finish())).toEqual([[2, 5], [3], [4]]);
       expect(accumulator.finish()).toEqual([]);
     });
+  });
+});
+
+describe('utf8Length and resolveGroupLimits', () => {
+  it('counts UTF-8 bytes, a surrogate pair as four and a lone surrogate as three', () => {
+    for (const text of ['', 'abc', 'é', 'தமிழ்', '😀', 'a😀b']) expect(utf8Length(text)).toBe(Buffer.byteLength(text, 'utf8'));
+    expect(utf8Length('\ud83d')).toBe(3);
+    expect(utf8Length('\ude00x')).toBe(4);
+  });
+
+  it('keeps every default when given nothing', () => {
+    expect(resolveGroupLimits()).toEqual(DEFAULT_GROUP_LIMITS);
+    expect(resolveGroupLimits({ maxGroups: 5.5 })).toEqual({ ...DEFAULT_GROUP_LIMITS, maxGroups: 5 });
   });
 });

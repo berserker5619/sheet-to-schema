@@ -1,13 +1,15 @@
 /**
- * Grouping (spec §5) through applyMapping (`apply-mapping.ts`, `groupRows` and `buildGroup`),
- * against the test adapter's collected `items`. Codes, rows and refs only; never message text.
+ * Grouping (spec §5) through applyMapping (`apply-mapping.ts`, over `GroupAccumulator`, and
+ * `buildGroup`), against the test adapter's collected `items`. Codes, rows and refs only; never
+ * message text.
  *
- * The streaming runner's limits (`maxGroups`, `maxGroupKeyBytes`, `maxGroupRows`) bound memory
- * that `applyMapping` does not hold, and are tested with the runner.
+ * The group limits (`maxGroupRows`, `maxGroups`, `maxGroupKeyBytes`) are enforced here by
+ * default since 1.1 (1.1 spec, B), and by the streaming runner with the same failures.
  */
 import { ordersAdapter } from './adapter.fixtures';
 import type { RecordProblem } from './adapter.types';
-import { applyMapping } from './apply-mapping';
+import { applyMapping, type ApplyMappingOptions } from './apply-mapping';
+import { DEFAULT_GROUP_LIMITS } from './group-limits';
 import { ImportFailure } from './import-failure';
 import type { ImportResult } from './result.types';
 
@@ -329,5 +331,77 @@ describe('grouping (§5)', () => {
       ['A', '', 'S2', '1'],
     ]);
     expect(result.errors).toEqual([expect.objectContaining({ ref: 'items.0.sku', code: 'RECORD_REQUIRED', rows: [2, 3] })]);
+  });
+});
+
+describe('group limits (1.1 spec, B)', () => {
+  const failureOf = (rows: unknown[][], p: unknown, options: ApplyMappingOptions): ImportFailure => {
+    try {
+      applyMapping(rows, p, ordersAdapter(), ctx, options);
+    } catch (failure) {
+      expect(failure).toBeInstanceOf(ImportFailure);
+      return failure as ImportFailure;
+    }
+    throw new Error('expected an ImportFailure');
+  };
+  const keys = (...ids: string[]) => ids.map(id => [id, '', 'S', '1']);
+
+  it('defaults to 10,000 rows, 200,000 groups and 8 MiB of closed keys', () => {
+    expect(DEFAULT_GROUP_LIMITS).toEqual({ maxGroupRows: 10_000, maxGroups: 200_000, maxGroupKeyBytes: 8 * 1024 * 1024 });
+  });
+
+  describe.each([true, false])('contiguous: %s', contiguous => {
+    it('fails a group past maxGroupRows with GROUP_TOO_LARGE, naming its first row and the row past the limit', () => {
+      const failure = failureOf(keys('A', 'A', 'A'), plan({ contiguous }), { groupLimits: { maxGroupRows: 2 } });
+      expect(failure.code).toBe('GROUP_TOO_LARGE');
+      expect(failure.details).toEqual({ key: ['A'], rows: [2, 4] });
+      expect(run(keys('A', 'A'), plan({ contiguous })).imported).toBe(1);
+      expect(applyMapping(keys('A', 'A'), plan({ contiguous }), ordersAdapter(), ctx, { groupLimits: { maxGroupRows: 2 } }).imported).toBe(1);
+    });
+
+    it('fails past maxGroups with TOO_MANY_GROUPS, and takes exactly maxGroups', () => {
+      const failure = failureOf(keys('A', 'B', 'C'), plan({ contiguous }), { groupLimits: { maxGroups: 2 } });
+      expect(failure.code).toBe('TOO_MANY_GROUPS');
+      expect(failure.details.key).toEqual(['C']);
+      expect(applyMapping(keys('A', 'B'), plan({ contiguous }), ordersAdapter(), ctx, { groupLimits: { maxGroups: 2 } }).imported).toBe(2);
+    });
+
+    it('does not count blank-key rows as groups', () => {
+      const result = applyMapping(keys('A', '', '', 'B'), plan({ contiguous }), ordersAdapter(), ctx, { groupLimits: { maxGroups: 2 } });
+      // Four records; the two keyless ones fail the adapter's required orderId, which is not a limit.
+      expect(result).toMatchObject({ imported: 2, failed: 2, rowsRead: 4 });
+    });
+  });
+
+  it('fails closed keys past maxGroupKeyBytes with TOO_MANY_GROUPS though their count is under maxGroups, counting UTF-8 bytes', () => {
+    // Each key is held as its JSON tuple: ["é"] is 6 bytes in UTF-8, ["😀"] is 8.
+    const failure = failureOf(keys('é', '😀', 'x'), plan(), { groupLimits: { maxGroupKeyBytes: 13 } });
+    expect(failure.code).toBe('TOO_MANY_GROUPS');
+    expect(failure.details).toEqual({ key: ['😀'], rows: [3] });
+    expect(applyMapping(keys('é', '😀'), plan(), ordersAdapter(), ctx, { groupLimits: { maxGroupKeyBytes: 14 } }).imported).toBe(2);
+  });
+
+  it('does not apply maxGroupKeyBytes with contiguous: false, which holds the whole sheet anyway', () => {
+    const result = applyMapping(keys('é', '😀', 'x'), plan({ contiguous: false }), ordersAdapter(), ctx, { groupLimits: { maxGroupKeyBytes: 1 } });
+    expect(result.imported).toBe(3);
+  });
+
+  it('falls back to the default for an override that is not a positive number', () => {
+    for (const maxGroupRows of [0, -1, Number.NaN, Number.POSITIVE_INFINITY]) {
+      expect(applyMapping(keys('A', 'A', 'A'), plan(), ordersAdapter(), ctx, { groupLimits: { maxGroupRows } }).imported).toBe(1);
+    }
+    expect(failureOf(keys('A', 'A', 'A'), plan(), { groupLimits: { maxGroupRows: 2.9 } }).code).toBe('GROUP_TOO_LARGE');
+  });
+
+  it('stops before any record is finalized, as a contiguity failure does', () => {
+    const calls: string[] = [];
+    const adapter = ordersAdapter();
+    const finalize = adapter.finalize;
+    adapter.finalize = (record, c) => {
+      calls.push(String(record['orderId']));
+      return finalize ? finalize(record, c) : record;
+    };
+    expect(() => applyMapping(keys('A', 'B', 'B', 'B'), plan(), adapter, ctx, { groupLimits: { maxGroupRows: 2 } })).toThrow(ImportFailure);
+    expect(calls).toEqual([]);
   });
 });

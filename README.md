@@ -138,6 +138,11 @@ Rows of a group that disagree on a parent field keep the first row's value and r
 **warning**: the record is still imported. Grouping works in `applyMapping`. The streaming
 runner in `/node` does not group yet, and refuses a grouped plan instead of ignoring it.
 
+Grouping is bounded: a group of more than 10,000 rows, more than 200,000 groups, or (for
+contiguous groups) more than 8 MiB of group keys stops the import with an `ImportFailure`
+(`GROUP_TOO_LARGE` or `TOO_MANY_GROUPS`). Raise them with
+`applyMapping(rows, plan, adapter, ctx, { groupLimits: { maxGroupRows: 50_000 } })`.
+
 ## Dates are never guessed
 
 `2026-09-05` is read as written. `05/09/2026` could be 5 September or 9 May, so it is an

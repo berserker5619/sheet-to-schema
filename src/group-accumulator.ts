@@ -17,9 +17,13 @@
  * - **Non-contiguous**: rows of one key gather wherever they are, in sheet order, and every
  *   group is held until `finish`, in the order it first appeared.
  *
+ * Both modes enforce `GroupLimits` as rows arrive (`maxGroupKeyBytes` in contiguous mode
+ * only), so memory is bounded by the open group and the closed keys, never by the sheet.
+ *
  * @internal Not exported from the package; its shape may change in any release.
  */
 import { cellText } from './cell-text';
+import { DEFAULT_GROUP_LIMITS, utf8Length, type GroupLimits } from './group-limits';
 import { ImportFailure } from './import-failure';
 import type { GroupSpec } from './plan.types';
 
@@ -41,9 +45,13 @@ export class GroupAccumulator<R extends GroupableRow> {
   private readonly open = new Map<string, Group<R>>();
   /** Contiguous: each closed key, with the last row of its run. */
   private readonly closed = new Map<string, number>();
-  private current: { key: string; group: Group<R> } | null = null;
+  private closedKeyBytes = 0;
+  private current: { key: string; tuple: string[]; group: Group<R> } | null = null;
 
-  constructor(private readonly group: Required<GroupSpec>) {}
+  constructor(
+    private readonly group: Required<GroupSpec>,
+    private readonly limits: GroupLimits = DEFAULT_GROUP_LIMITS,
+  ) {}
 
   /** Take the next row, in sheet order. Returns the groups this row finished, oldest first. */
   push(row: R): Group<R>[] {
@@ -60,8 +68,9 @@ export class GroupAccumulator<R extends GroupableRow> {
 
     if (!this.group.contiguous) {
       const existing = this.open.get(key);
-      if (existing) existing.members.push(row);
+      if (existing) this.add(existing, row, tuple);
       else {
+        if (this.open.size >= this.limits.maxGroups) this.tooManyGroups(tuple, [row.rowNumber]);
         const fresh: Group<R> = { keyless: false, members: [row] };
         this.open.set(key, fresh);
         this.all.push(fresh);
@@ -70,7 +79,7 @@ export class GroupAccumulator<R extends GroupableRow> {
     }
 
     if (this.current?.key === key) {
-      this.current.group.members.push(row);
+      this.add(this.current.group, row, tuple);
       return [];
     }
     const finished = this.close();
@@ -82,7 +91,7 @@ export class GroupAccumulator<R extends GroupableRow> {
         { key: tuple, rows: [lastRow, row.rowNumber] },
       );
     }
-    this.current = { key, group: { keyless: false, members: [row] } };
+    this.current = { key, tuple, group: { keyless: false, members: [row] } };
     return finished;
   }
 
@@ -92,12 +101,45 @@ export class GroupAccumulator<R extends GroupableRow> {
     return this.close();
   }
 
-  /** Close the open run, if there is one, and hand it out. */
+  /** One more row for a group that has one already, within `maxGroupRows`. */
+  private add(group: Group<R>, row: R, tuple: string[]): void {
+    if (group.members.length >= this.limits.maxGroupRows) {
+      throw new ImportFailure(
+        'GROUP_TOO_LARGE',
+        `Group ${tuple.join(' / ')} has more than ${this.limits.maxGroupRows} rows: it starts at row ${group.members[0].rowNumber} and reaches row ${row.rowNumber}. Check the key columns, or raise maxGroupRows.`,
+        { key: tuple, rows: [group.members[0].rowNumber, row.rowNumber] },
+      );
+    }
+    group.members.push(row);
+  }
+
+  /**
+   * Close the open run, if there is one, and hand it out. Its key joins the closed keys, which
+   * `maxGroups` and `maxGroupKeyBytes` bound.
+   */
   private close(): Group<R>[] {
     const current = this.current;
     if (!current) return [];
     this.current = null;
-    this.closed.set(current.key, current.group.members[current.group.members.length - 1].rowNumber);
+    const lastRow = current.group.members[current.group.members.length - 1].rowNumber;
+    if (this.closed.size >= this.limits.maxGroups) this.tooManyGroups(current.tuple, [lastRow]);
+    this.closedKeyBytes += utf8Length(current.key);
+    if (this.closedKeyBytes > this.limits.maxGroupKeyBytes) {
+      throw new ImportFailure(
+        'TOO_MANY_GROUPS',
+        `The group keys up to row ${lastRow} add up to more than ${this.limits.maxGroupKeyBytes} bytes. Use shorter key columns, or raise maxGroupKeyBytes.`,
+        { key: current.tuple, rows: [lastRow] },
+      );
+    }
+    this.closed.set(current.key, lastRow);
     return [current.group];
+  }
+
+  private tooManyGroups(tuple: string[], rows: number[]): never {
+    throw new ImportFailure(
+      'TOO_MANY_GROUPS',
+      `The sheet has more than ${this.limits.maxGroups} groups; the next one is ${tuple.join(' / ')}, at row ${rows[0]}. Check the key columns, or raise maxGroups.`,
+      { key: tuple, rows },
+    );
   }
 }

@@ -49,6 +49,8 @@ export type { ApplyMappingOptions, PreparedPlan } from './apply-mapping';
 export { validateRecord } from './validate-record';
 export type { ImportResult, ImportRowError } from './result.types';
 export { IMPORT_FAILURE_CODES, ImportFailure } from './import-failure';
+export { DEFAULT_GROUP_LIMITS } from './group-limits';
+export type { GroupLimits } from './group-limits';
 
 // ─── Suggesting a mapping ───────────────────────────────────────────────────
 export { DEFAULT_SLOTS, slotsFor, suggestMapping } from './suggest';
