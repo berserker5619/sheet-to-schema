@@ -39,7 +39,8 @@
     "check:timezones": "node scripts/check-timezones.mjs",
     "check:consumer": "node scripts/verify-consumer.mjs",
     "regenerate:fixtures": "node test/fixtures/real-world/generate-fixtures.mjs",
-    "regenerate:parity-fixtures": "node test/fixtures/parity/generate-parity-fixtures.mjs"
+    "regenerate:parity-fixtures": "node test/fixtures/parity/generate-parity-fixtures.mjs",
+    "check:browser-runtime": "node scripts/check-browser-runtime.mjs"
   },
   "peerDependencies": {
     "busboy": "^1.6.0",

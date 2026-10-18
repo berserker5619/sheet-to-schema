@@ -204,8 +204,20 @@ file is a workbook.
 
 Known limitations of the browser path:
 
-- **It needs `DecompressionStream`** (every current browser, and Node 20) to read a workbook;
-  without it, a workbook fails with a message saying so. A CSV needs nothing.
+- **A workbook needs `DecompressionStream` with the `deflate-raw` format.** A CSV needs
+  nothing.
+
+  | Runtime | Reads a workbook from |
+  | --- | --- |
+  | Chrome, Edge (desktop and Android) | 103 |
+  | Firefox (desktop and Android) | 113 |
+  | Safari (macOS and iOS) | 16.4 |
+  | Node | 20.12 |
+
+  The browser versions are MDN browser-compat-data 8.1.6's for `deflate-raw`; Node 20.12 is
+  tested (20.11 lacks it). On an older runtime a workbook fails with `UNSUPPORTED_RUNTIME`,
+  saying which versions can read one; a CSV still reads. `/node` and the main entry still need
+  only Node 20.
 - **A broken archive may be described differently.** Both readers refuse it, but the server
   reads entries front to back and the browser reads the zip's directory, so the message for a
   damaged `.xlsx` can differ. Every well-formed workbook in the parity fixtures reads the same.
@@ -279,10 +291,12 @@ Four things to know before deploying it:
 `PLAN_PROBLEM_CODES`, `CELL_PROBLEM_CODES` and `RECORD_PROBLEM_CODES` list them all.
 
 A grouped import can also stop as a whole, with an `ImportFailure` (`IMPORT_FAILURE_CODES`).
-`applyMapping` and `runImport` throw it; over HTTP it is the error body's `code`:
+`applyMapping` and `runImport` throw it; over HTTP it is the error body's `code`. And the
+browser reader can refuse to read a workbook at all, with an `ImportError`:
 
 | Code | HTTP | Raised when |
 | --- | --- | --- |
+| `UNSUPPORTED_RUNTIME` | (browser only) | `sheet-to-schema/browser` is asked to read a workbook where there is no `DecompressionStream` with `deflate-raw` (see the browser section for versions). A CSV is not affected. |
 | `GROUP_NOT_CONTIGUOUS` | 422 | A group's key comes back after its rows ended. `details` has the key and both rows. |
 | `GROUP_TOO_LARGE` | 413 | A group has more than `maxGroupRows` rows. |
 | `TOO_MANY_GROUPS` | 413 | More than `maxGroups` groups, or more than `maxGroupKeyBytes` of group keys. |

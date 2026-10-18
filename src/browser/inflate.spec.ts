@@ -1,5 +1,5 @@
 import { deflateRawSync } from 'node:zlib';
-import { inflate } from './inflate';
+import { inflate, UNSUPPORTED_RUNTIME_MESSAGE } from './inflate';
 
 describe('inflate', () => {
   it('inflates raw deflate, chunk by chunk', async () => {
@@ -17,12 +17,12 @@ describe('inflate', () => {
     expect(failure).toMatchObject({ code: 'MALFORMED_FILE', message: 'This is not a readable workbook.' });
   });
 
-  it('says so where there is no DecompressionStream', async () => {
+  it('refuses with UNSUPPORTED_RUNTIME where there is no DecompressionStream at all', async () => {
     const globals = globalThis as { DecompressionStream?: unknown };
     const saved = globals.DecompressionStream;
     delete globals.DecompressionStream;
     try {
-      await expect(inflate(deflateRawSync('a'), 10)).rejects.toThrow('it has no DecompressionStream');
+      await expect(inflate(deflateRawSync('a'), 10)).rejects.toMatchObject({ code: 'UNSUPPORTED_RUNTIME', message: UNSUPPORTED_RUNTIME_MESSAGE });
     } finally {
       globals.DecompressionStream = saved;
     }

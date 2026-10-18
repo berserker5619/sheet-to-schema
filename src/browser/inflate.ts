@@ -1,20 +1,39 @@
 /**
  * inflate.ts — a raw-deflate entry inflated in a browser, bounded as it goes.
  *
- * `DecompressionStream` is the browser's own (and Node 20's). Inflating is where an archive's
- * real size shows, so the output is counted chunk by chunk and refused past `max` with the
- * server's message.
+ * `DecompressionStream` is the runtime's own, and its `deflate-raw` format is what a zip entry
+ * is: Node 20.12+, Chrome and Edge 103+, Firefox 113+, Safari 16.4+. Inflating is where an
+ * archive's real size shows, so the output is counted chunk by chunk and refused past `max` with
+ * the server's message.
  */
 import { concat } from '../shared/formula-filter';
 import { ImportError } from '../shared/import-error';
+
+/** What a runtime without `deflate-raw` is told, with the versions that have it. */
+export const UNSUPPORTED_RUNTIME_MESSAGE =
+  'Reading .xlsx files needs DecompressionStream with the "deflate-raw" format, which this runtime does not have. ' +
+  'Use Node 20.12+, Chrome or Edge 103+, Firefox 113+ or Safari 16.4+, or save the sheet as CSV.';
+
+/**
+ * Refuse, before reading a workbook, a runtime that cannot inflate one.
+ *
+ * The format is what is checked, not only the class: Node 20.0 to 20.11 and Chrome 80 to 102 have
+ * `DecompressionStream` and reject `"deflate-raw"` from its constructor, which escaped as a raw
+ * `TypeError` in 1.1.0-rc.2 (R1-1 in docs/1.1-rc-feedback.md).
+ */
+export function assertDeflateRaw(): void {
+  try {
+    new DecompressionStream('deflate-raw');
+  } catch (cause) {
+    throw new ImportError('UNSUPPORTED_RUNTIME', UNSUPPORTED_RUNTIME_MESSAGE, { cause });
+  }
+}
 
 /** A failure to write is the same failure the reader reports; it is not reported twice. */
 const ignore = (): void => undefined;
 
 export async function inflate(data: Uint8Array, max: number): Promise<Uint8Array> {
-  if (typeof DecompressionStream !== 'function') {
-    throw new Error('This browser cannot read .xlsx files: it has no DecompressionStream. Use a current browser, or save the sheet as CSV.');
-  }
+  assertDeflateRaw();
   const stream = new DecompressionStream('deflate-raw');
   const writer = stream.writable.getWriter();
   // Not awaited: the reader below drains what the writer pushes, and awaiting first would wait

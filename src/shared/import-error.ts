@@ -47,6 +47,11 @@ export type ImportErrorCode =
   | 'TIMEOUT'
   /** The consumer's `onImport` threw. Nothing about *why* crosses the wire. */
   | 'IMPORT_FAILED'
+  /**
+   * The browser reader runs where a workbook cannot be read: no `DecompressionStream` with the
+   * `deflate-raw` format. Raised by `sheet-to-schema/browser` only, never by the server.
+   */
+  | 'UNSUPPORTED_RUNTIME'
   /** Anything else. Deliberately the least informative code there is. */
   | 'INTERNAL';
 
@@ -63,6 +68,8 @@ const STATUS: Record<ImportErrorCode, number> = {
   INVALID_PLAN: 400,
   TIMEOUT: 408,
   IMPORT_FAILED: 500,
+  // Not an HTTP answer: only the browser reader raises it. 501 if one ever has to be chosen.
+  UNSUPPORTED_RUNTIME: 501,
   INTERNAL: 500,
 };
 

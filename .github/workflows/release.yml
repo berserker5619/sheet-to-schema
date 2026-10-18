@@ -58,6 +58,9 @@ jobs:
       - name: Consumer install from tarball
         run: npm run check:consumer
 
+      - name: The browser reader on this runtime
+        run: npm run check:browser-runtime
+
       # Trusted publishing needs npm >= 11.5.1, newer than the npm bundled with Node, so it is
       # installed. Pinned, not @latest: a release should not change the tool that publishes it
       # on the day a new npm comes out. 12.2.0 published 1.0.0-rc.3 through trusted publishing,

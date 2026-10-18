@@ -31,7 +31,7 @@ import { guardHeaders, guardRow } from '../shared/sheet-guards';
 import { detectFormat, MAGIC_BYTES } from '../shared/sheet-format';
 import { rowCells } from '../shared/xlsx-cells';
 import { filterFormulas } from '../shared/formula-filter';
-import { inflate } from './inflate';
+import { assertDeflateRaw, inflate } from './inflate';
 import { crc32, pickParts, repack, STORED, type PackedEntry } from '../shared/zip';
 
 /** The limits a browser read enforces. Each one left out is the server's default. */
@@ -68,7 +68,9 @@ const loadExcel = (): Promise<ExcelJS> =>
  * and the same refusals with the same codes and messages.
  *
  * @throws ImportError `TOO_LARGE`, `SHEET_TOO_LARGE`, `UNSUPPORTED_FORMAT`, `MALFORMED_FILE`,
- *   `ARCHIVE_REFUSED`, as the server would. A workbook read without `exceljs` installed throws a
+ *   `ARCHIVE_REFUSED`, as the server would; and for a workbook, `UNSUPPORTED_RUNTIME` where the
+ *   runtime has no `DecompressionStream` with `deflate-raw` (before Node 20.12, Chrome or Edge
+ *   103, Firefox 113, Safari 16.4). A workbook read without `exceljs` installed throws a
  *   plain `Error` saying what to install.
  */
 export async function readSheetFile(input: SheetFileInput, options: ReadSheetFileOptions = {}): Promise<SheetFile> {
@@ -170,6 +172,8 @@ function guardGrid(raw: Iterable<unknown[]>, limits: ImportLimits): SheetGrid {
  * even loaded, so an over-limit zip never reaches it.
  */
 async function xlsxGrid(bytes: Uint8Array, limits: ImportLimits): Promise<SheetGrid> {
+  // First, so a runtime that cannot read a workbook says so whatever the file is.
+  assertDeflateRaw();
   const parts = pickParts(bytes, limits);
   const Excel = await loadExcel();
   const filtered = await withoutFormulas(parts[parts.length - 1], limits);

@@ -33,6 +33,8 @@ Before submitting a pull request, ensure all gates pass:
 - `npm run test:coverage` (enforces coverage thresholds)
 - `npm run check:timezones` (tests dates in 6 distinct UTC offsets)
 - `npm run check:consumer` (packs and installs tarball in scratch app)
+- `npm run check:browser-runtime` (reads a CSV and a workbook through `/browser` on this Node;
+  CI also runs it on Node 20.11 with `--expect-unsupported`)
 
 ## Working with Dynamic Entity
 
