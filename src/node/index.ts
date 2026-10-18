@@ -40,6 +40,7 @@ export { createImportRouter, sendFailure, SERVER_FEATURES, templateFilename, tem
 export type {
   BindingSource,
   ImportBinding,
+  ImportErrorReport,
   ImportHandler,
   ImportRequest,
   ImportResponse,

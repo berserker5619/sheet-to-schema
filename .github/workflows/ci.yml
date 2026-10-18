@@ -76,7 +76,7 @@ jobs:
       - run: npm run build
       - run: node scripts/check-browser-runtime.mjs --expect-unsupported
 
-  # The built package in real browsers, bundled the ways apps bundle it (1.1.1): readCsvFile with
+  # The built package in real browsers, bundled the ways apps bundle it (1.2): readCsvFile with
   # exceljs not installed, /browser with exceljs external, behind Vite's stub, installed, and with
   # its chunk failing to download. The messages are the ones Dynamic Entity's Step 0 recorded.
   browsers:

@@ -3,7 +3,7 @@
  *
  * Browser-safe and shared: the server's `guardRows` checks each streamed row with these, and
  * the browser readers check each row of the file they hold, so all refuse the same sheet at the
- * same row with the same message. In the main entry (`@internal`) since 1.1.1, because
+ * same row with the same message. In the main entry (`@internal`) since 1.2, because
  * `readCsvFile` is; `/node` and `/browser` reach it by the package's name, through
  * `shared/sheet-guards.ts`, so there is one copy.
  */

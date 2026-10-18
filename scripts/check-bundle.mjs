@@ -19,7 +19,7 @@
  * - A CSV-only app bundled for a browser from `/browser` (esbuild, code splitting on) carries no
  *   ExcelJS in the code it loads up front: ExcelJS is a separate chunk, fetched on first workbook.
  * - A CSV-only app bundled from the main entry's `readCsvFile` builds where `exceljs` cannot be
- *   resolved at all, as in an app that never installed it (1.1.1): nothing in its module graph
+ *   resolved at all, as in an app that never installed it (1.2): nothing in its module graph
  *   asks for `exceljs` or reaches `/browser`. Angular's `ng build` and webpack fail on `/browser`
  *   there (Dynamic Entity docs/3.1-spec.md, Step 0).
  * - No published typings import `express` or `@types/express`.
@@ -38,7 +38,7 @@ import ts from 'typescript';
 const ROOT = process.cwd();
 const PEERS = ['exceljs', 'busboy', 'express'];
 const BUILTINS = new Set(builtinModules.flatMap(name => [name, `node:${name}`]));
-/** Classes only the main entry defines; `/node` and `/browser` import them by name. ImportError since 1.1.1. */
+/** Classes only the main entry defines; `/node` and `/browser` import them by name. ImportError since 1.2. */
 const ENGINE_CLASSES = [
   { name: 'ImportFailure', pattern: /class ImportFailure\b/ },
   { name: 'ImportError', pattern: /class ImportError\b/ },

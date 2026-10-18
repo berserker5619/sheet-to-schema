@@ -34,7 +34,7 @@ describe('reading a workbook without exceljs installed', () => {
     );
   });
 
-  it('does not call it a problem with the file: PEER_MISSING, naming the package (1.1.1)', async () => {
+  it('does not call it a problem with the file: PEER_MISSING, naming the package (1.2)', async () => {
     // The file is fine. Reporting MALFORMED_FILE would send the user to fix a workbook that
     // has nothing wrong with it, when the server is what is missing something.
     const failure = await readSheet({ stream: await workbookBytes() }).catch((error: Error) => error);

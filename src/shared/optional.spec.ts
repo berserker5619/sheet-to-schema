@@ -1,5 +1,5 @@
 /**
- * loadPeer (`shared/optional.ts`, 1.1.1): which failures mean "that package is not installed".
+ * loadPeer (`shared/optional.ts`, 1.2): which failures mean "that package is not installed".
  *
  * Every message here is verbatim from Dynamic Entity's Step 0 check (docs/3.1-spec.md): Angular
  * 21, Vite 8 and webpack 5, in Chromium 156, Firefox 157 and WebKit 27.2. A real browser runs

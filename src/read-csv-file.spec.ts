@@ -1,5 +1,5 @@
 /**
- * `readCsvFile` (1.1.1): the CSV half of `/browser`'s `readSheetFile`, from the main entry, with
+ * `readCsvFile` (1.2): the CSV half of `/browser`'s `readSheetFile`, from the main entry, with
  * nothing that can reach `exceljs`.
  *
  * The mock stands for `exceljs` not being installed, and counts every attempt to load it: none

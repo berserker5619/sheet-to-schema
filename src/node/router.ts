@@ -19,6 +19,7 @@
 import {
   DEFAULT_SLOTS,
   IMPORTER_VERSION,
+  ImportFailure,
   PLAN_VERSIONS,
   type AdapterStamp,
   type DateOrder,
@@ -162,6 +163,38 @@ export interface ImportRouterOptions<TRequest extends ImportRequest = ImportRequ
    * and `planVersions` are this router's either way.
    */
   engineVersion?: string;
+  /**
+   * Called for every failure this router answers with a 5xx, after the answer is chosen and
+   * before it is sent, so the server can log what the client is not told (1.2). `code` is the
+   * thrown error's own (`PEER_MISSING`, `IMPORT_FAILED`, …), or `INTERNAL` for anything else;
+   * `peer` names the package for `PEER_MISSING`. Default: one `console.error` line with the
+   * method, path, code and package, and the error. A callback that throws is ignored.
+   */
+  onError?: (error: unknown, report: ImportErrorReport<TRequest>) => void;
+}
+
+/** What `onError` is told about a failure the client is answered 5xx for. */
+export interface ImportErrorReport<TRequest extends ImportRequest = ImportRequest> {
+  request: TRequest;
+  /** The status the client is answered with. */
+  status: number;
+  /** The error's own code, which the client may not see: `PEER_MISSING` is answered `INTERNAL`. */
+  code: string;
+  /** For `PEER_MISSING`, the package that is not installed. */
+  peer?: string;
+}
+
+/** The code and package a failure carries, whatever the client is answered. */
+function reportOf<TRequest extends ImportRequest>(error: unknown, request: TRequest, status: number): ImportErrorReport<TRequest> {
+  const own = error instanceof ImportError || error instanceof ImportFailure ? error.code : 'INTERNAL';
+  const details = error instanceof ImportError ? (error.details as { peer?: unknown } | undefined) : undefined;
+  const peer = own === 'PEER_MISSING' && typeof details?.peer === 'string' ? details.peer : undefined;
+  return { request, status, code: own, ...(peer ? { peer } : {}) };
+}
+
+/** The default `onError`: one line a server's log can be searched for, and the error itself. */
+function logFailure(error: unknown, { request, status, code, peer }: ImportErrorReport): void {
+  console.error(`sheet-to-schema/node: ${request.method ?? '?'} ${(request as { originalUrl?: string }).originalUrl ?? request.url ?? '?'} answered ${status}: ${code}${peer ? ` (${peer})` : ''}`, error);
 }
 
 /** A property of the map itself, never one it inherited: `constructor` is not a binding. */
@@ -314,7 +347,17 @@ export function createImportRouter<TRouter extends ImportRouter<TRequest>, TRequ
     (handler: (request: TRequest, response: ImportResponse) => Promise<void>): ImportHandler<TRequest> =>
     (request, response) => {
       applyTimeouts(request, response, limits);
-      handler(request, response).catch(error => sendFailure(response, error));
+      handler(request, response).catch(error => {
+        const { status } = toErrorBody(error);
+        if (status >= 500) {
+          try {
+            (options.onError ?? logFailure)(error, reportOf(error, request, status));
+          } catch {
+            // A logger that fails must not also cost the client its answer.
+          }
+        }
+        sendFailure(response, error);
+      });
     };
 
   router.get(

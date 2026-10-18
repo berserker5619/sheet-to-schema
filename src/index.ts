@@ -71,7 +71,7 @@ export { completeFirstLine, createCsvReader, decimalMarkFor, detectDelimiter, es
 export type { CsvDelimiter, CsvReader, CsvReaderOptions, SheetData, SheetGrid } from './csv';
 
 // ─── Reading a file ─────────────────────────────────────────────────────────
-// A CSV or TSV file read whole, with nothing that can reach exceljs (1.1.1), and what it, the
+// A CSV or TSV file read whole, with nothing that can reach exceljs (1.2), and what it, the
 // server's readers and /browser's refuse with: one class, which /node and /browser re-export.
 export { readCsvFile } from './read-csv-file';
 export type { CsvFile, CsvFileLimits, ReadCsvFileOptions, SheetFileInput } from './read-csv-file';

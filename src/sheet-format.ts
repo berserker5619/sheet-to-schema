@@ -3,7 +3,7 @@
  *
  * Browser-safe and shared, so the server's `readSheet`, `sheet-to-schema/browser`'s
  * `readSheetFile` and `readCsvFile` refuse the same files with the same messages and read the
- * rest the same way. In the main entry (`@internal`) since 1.1.1, because `readCsvFile` is.
+ * rest the same way. In the main entry (`@internal`) since 1.2, because `readCsvFile` is.
  */
 import { ImportError } from './import-error';
 

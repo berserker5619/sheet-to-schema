@@ -3,7 +3,7 @@
  *
  * Browser-safe and shared: the server's readers, `sheet-to-schema/browser`'s and the main
  * entry's `readCsvFile` throw the same codes and messages for the same file. In the main entry
- * since 1.1.1, which `/node` and `/browser` import by name, so all three export one class. Match
+ * since 1.2, which `/node` and `/browser` import by name, so all three export one class. Match
  * on `code` all the same: a CommonJS and an ESM copy of the package are two classes. Turning
  * one into a response is `/node`'s (`toErrorBody` in `node/errors.ts`).
  *

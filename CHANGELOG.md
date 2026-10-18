@@ -6,14 +6,15 @@ This project follows [Semantic Versioning](https://semver.org/spec/v2.0.0.html).
 
 ---
 
-## [1.1.1]
+## [1.2.0-rc.1]
 
 What Dynamic Entity's 3.1 Step 0 check found about bundled apps without `exceljs` installed
 (its docs/3.1-spec.md). `sheet-to-schema/browser` does not build there under Angular's
 `ng build` or webpack, though it does under Vite and `ng serve`. And where an app did build, a
-workbook failed with the bundler's or the browser's own error, not "install exceljs". **Every
-1.1.0 test passes**, except where a test pinned that a missing peer was a plain `Error` with no
-code, and four `PLAN_GROUP` expectations that now include `reason`.
+workbook failed with the bundler's or the browser's own error, not "install exceljs". It is a
+minor release because it adds API. **Every 1.1.0 test passes**, with two exceptions: tests that
+pinned a missing peer as a plain `Error` with no code, and four `PLAN_GROUP` expectations that
+now include `reason`.
 
 ### Added
 
@@ -31,6 +32,13 @@ code, and four `PLAN_GROUP` expectations that now include `reason`.
 - `PlanProblem.reason`: a server's `PLAN_GROUP` refusal of a valid grouped plan says which
   refusal it is, `grouping-disabled` or `non-contiguous`, so a client need not match the
   message. The code stays `PLAN_GROUP`. `PlanProblemReason` is the type.
+- `onError(error, { request, status, code, peer })` on `createImportRouter`: called for every
+  failure the router answers with a 5xx, with the error's own code, which the client may not
+  see, and for `PEER_MISSING` the package. `ImportErrorReport` is its type. Without it, the
+  router logs one `console.error` line, such as
+  `sheet-to-schema/node: POST /import/order/preview answered 500: PEER_MISSING (exceljs)`, with
+  the error. In 1.1 such a failure was answered and logged nowhere. A 4xx is not reported, since
+  the client was told.
 - `npm run check:browsers` (and a CI job): the built package in Chromium, Firefox and WebKit,
   bundled the ways Step 0 found apps bundle it.
 - `@internal`, in the main entry, so `/node` and `/browser` share one copy:

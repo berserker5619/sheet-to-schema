@@ -9,7 +9,7 @@
  * Each is enforced **during** streaming rather than after. A check that runs once the file is
  * in memory has already lost the thing it was checking.
  *
- * In the main entry since 1.1.1, because `readCsvFile` enforces them; `/node` exports them, and
+ * In the main entry since 1.2, because `readCsvFile` enforces them; `/node` exports them, and
  * reaches them by the package's name through `shared/limits.ts`. `@internal` here: import them
  * from `/node`.
  */

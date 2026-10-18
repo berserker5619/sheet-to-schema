@@ -79,7 +79,7 @@ export interface PlanProblem {
   /** For a person to read. May be reworded in any release. */
   message: string;
   /**
-   * Which refusal it is, where one code covers several a client handles differently (1.1.1).
+   * Which refusal it is, where one code covers several a client handles differently (1.2).
    * Compare this, never `message`. Absent on every other problem.
    */
   reason?: PlanProblemReason;

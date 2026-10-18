@@ -14,7 +14,7 @@ one record per row, or per group of rows, reporting every cell it could not use.
 - **The same reader on both sides.** `sheet-to-schema/browser` reads a CSV, TSV or `.xlsx`
   file in a browser into exactly the rows the server reads from the same bytes.
 
-> **Status: stable (1.1.1).** It is the import engine of
+> **Status: stable (1.1.0); 1.2.0-rc.1 on `next`.** It is the import engine of
 > [Dynamic Entity](https://github.com/berserker5619/Dynamic-Entity#readme) 3.0, extracted so it can be used without it.
 > Members marked `@internal` are not covered by semver and may change in any release.
 
@@ -221,11 +221,11 @@ file is a workbook.
   | Angular 21 `ng serve` | Yes | `PEER_MISSING` |
   | Vite 8 (build and dev) | Yes | `PEER_MISSING` |
   | webpack 5 | No: `Can't resolve 'exceljs'` | — |
-  | Any of them with `exceljs` marked external | Yes | `PEER_MISSING` (from 1.1.1; the browser's `TypeError` is its `cause`) |
+  | Any of them with `exceljs` marked external | Yes | `PEER_MISSING` (from 1.2.0; the browser's `TypeError` is its `cause`) |
 
   A CSV read through `/browser` works wherever the app builds. An app that reads only CSV and
   does not install `exceljs` uses `readCsvFile`.
-- **A missing `exceljs` is `PEER_MISSING`** (an `ImportError`, from 1.1.1), with
+- **A missing `exceljs` is `PEER_MISSING`** (an `ImportError`, from 1.2.0), with
   `details.peer` and what to install. A workbook chunk that failed to download is not: the
   browser's own error (a `TypeError`, or webpack's `ChunkLoadError`) passes through as it is.
 - **The limits are the server's**, with its defaults: `maxBytes`, `maxRows`, `maxColumns`,
@@ -297,7 +297,7 @@ createImportRouter(express.Router(), {
 });
 ```
 
-Four things to know before deploying it:
+Five things to know before deploying it:
 
 1. **An import is not transactional.** A file that fails at row 30,000 has written 29,999
    records. Run `/validate` first, and make your writer idempotent. A grouped import can stop
@@ -312,6 +312,10 @@ Four things to know before deploying it:
    A preview lists `planVersions` and, from 1.1, `features` (`["group"]` on a router created
    with `grouping: true`); a missing `features` means the server will not group. The 1.0 form, `planForServer(plan, preview.planVersions)`,
    still works and checks plan versions only.
+5. **A 500 tells the client nothing, so the server is told instead.** From 1.2, `onError`
+   receives every failure the router answers with a 5xx, with its own code, such as
+   `PEER_MISSING` for a server without `exceljs`, answered `INTERNAL`, and the package. Without
+   `onError`, it is one `console.error` line and the error.
 
 ## Problem codes
 
@@ -322,7 +326,7 @@ Four things to know before deploying it:
 | `RECORD_` | The record built from a row is not valid, or needs a warning. | `RECORD_REQUIRED`, `RECORD_GROUP_CONFLICT` |
 
 `PLAN_PROBLEM_CODES`, `CELL_PROBLEM_CODES` and `RECORD_PROBLEM_CODES` list them all. A
-server's `PLAN_GROUP` refusal of a valid grouped plan also carries a `reason` (from 1.1.1):
+server's `PLAN_GROUP` refusal of a valid grouped plan also carries a `reason` (from 1.2.0):
 `grouping-disabled` (the router was created without `grouping: true`) or `non-contiguous`
 (`group.contiguous: false`, which the server never streams). Compare `reason`, never the
 message.
@@ -330,7 +334,7 @@ message.
 A grouped import can also stop as a whole, with an `ImportFailure` (`IMPORT_FAILURE_CODES`).
 `applyMapping` and `runImport` throw it; over HTTP it is the error body's `code`. And the
 readers can refuse to read a file at all, with an `ImportError` (the main entry exports it from
-1.1.1, for `readCsvFile`):
+1.2.0, for `readCsvFile`):
 
 | Code | HTTP | Raised when |
 | --- | --- | --- |

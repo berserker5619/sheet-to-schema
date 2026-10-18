@@ -1,7 +1,7 @@
 #!/usr/bin/env node
 /**
  * The built package in Chromium, Firefox and WebKit, bundled the ways Dynamic Entity's Step 0
- * check found apps bundle it (docs/3.1-spec.md there), and what each read does (1.1.1).
+ * check found apps bundle it (docs/3.1-spec.md there), and what each read does (1.2).
  *
  * - `readCsvFile` from the main entry, bundled with `exceljs` unresolvable: it builds, a CSV
  *   reads, and a workbook is refused with UNSUPPORTED_FORMAT.
