@@ -1,6 +1,6 @@
-# 1.1 release-candidate round
+# 1.1 release-candidate rounds
 
-The scripts behind "Round 1" in [`docs/1.1-rc-feedback.md`](../../docs/1.1-rc-feedback.md), run
+The scripts behind Rounds 1 and 2 in [`docs/1.1-rc-feedback.md`](../../docs/1.1-rc-feedback.md), run
 against `sheet-to-schema@next` as published on npm, never this repository's source. Nothing here
 is a workspace, nothing here is published, no CI job runs it, and lint skips it. It is kept so
 the round can be repeated against a later version: change what the projects install, rerun,
@@ -49,6 +49,10 @@ node run-browsers.mjs dist-esbuild esbuild chromium
 Each run prints the checks passed per browser and the scripts requested at load, after every
 CSV, and after the workbooks; `report-<label>.json` has the detail. For bundle sizes, look for
 `Worksheet name already exists` (a string only ExcelJS contains) in each output chunk.
+
+`run-old-runtime.mjs` opens the Vite build in each browser with `DecompressionStream` made to
+reject `"deflate-raw"` (as Chrome and Edge 80-102 do): a CSV must read and a workbook must be
+refused with `UNSUPPORTED_RUNTIME` (from 1.1.0-rc.3).
 
 `old-node.mjs`, run from `ref/` under an older Node (`npx -p node@20.11.0 node old-node.mjs`),
 reads a CSV and a workbook through `/browser` (R1-1).

@@ -6,36 +6,18 @@ This project follows [Semantic Versioning](https://semver.org/spec/v2.0.0.html).
 
 ---
 
-## [1.1.0-rc.3]
+## [1.1.0]
 
-The third release candidate of 1.1. As rc.2, with the one finding of rc.2's test round fixed
-(docs/1.1-rc-feedback.md, R1-1 and R1-2). **Every 1.0 test passes unchanged.** Published to
-`next`; `latest` stays 1.0.0.
+A browser file reader that reads exactly what the server reads, grouping in the streaming
+runner (opt-in), and formula results read as their typed values (docs/1.1-spec.md). The code is
+identical to 1.1.0-rc.3; only the version and the docs changed. **Every 1.0 test passes
+unchanged.** The release candidates were tested from npm in fresh projects
+(docs/1.1-rc-feedback.md): Chromium, Firefox and WebKit; Vite, webpack and esbuild; express 4
+and 5, CommonJS and ESM; a CommonJS Jest suite with no Node flags; TypeScript strict on
+`@types/express` 4, 5 and none; and Dynamic Entity 3.0's own suites.
 
-- Fixed: reading a workbook through `/browser` on a runtime that has `DecompressionStream` but
-  not its `deflate-raw` format (Node 20.0 to 20.11, Chrome and Edge 80 to 102) threw the
-  constructor's raw `TypeError`. It now throws `ImportError` with a new code,
-  `UNSUPPORTED_RUNTIME`, naming the versions that can read a workbook; a CSV still reads.
-- Added: the minimum versions for reading a workbook in the browser path, in the README and
-  the `/browser` entry: Chrome and Edge 103, Firefox 113, Safari 16.4, Node 20.12. `/node` and
-  `engines` (Node 20) are unchanged.
-- CI runs the browser reader on Node 20.11, where it must read a CSV and refuse a workbook with
-  `UNSUPPORTED_RUNTIME` (`npm run check:browser-runtime`).
-
-The full 1.1 notes are under rc.2.
-
----
-
-## [1.1.0-rc.2]
-
-The second release candidate of 1.1 (docs/1.1-spec.md): a browser file reader that matches the
-server's, grouping in the streaming runner (opt-in), and formula results read as their typed
-values. Every change is an addition except the formula fix and the group limits now enforced by
-`applyMapping`, both listed below. **Every 1.0 test passes unchanged.** Published to `next`;
-`latest` stays 1.0.0.
-
-Since rc.1: server-side grouping is opt-in (`grouping: true`). rc.1 grouped by default, and
-Dynamic Entity 3.0, which relies on the 1.0 refusal, failed against it.
+Two changes are not additions, both listed below: formula results (a fix), and the group limits
+`applyMapping` now enforces.
 
 ### Added
 
@@ -44,7 +26,9 @@ Dynamic Entity 3.0, which relies on the 1.0 refusal, failed against it.
   from the same bytes, with the server's limits, error codes and messages; `readXlsx` does the
   same for a workbook. `exceljs` stays an optional peer, loaded only when a workbook is read.
   A workbook needs `DecompressionStream` with `deflate-raw` (Chrome and Edge 103, Firefox 113,
-  Safari 16.4, Node 20.12); elsewhere it is refused with `UNSUPPORTED_RUNTIME` (rc.3).
+  Safari 16.4, Node 20.12); elsewhere it is refused with a new `ImportError` code,
+  `UNSUPPORTED_RUNTIME`, naming those versions. A CSV reads anywhere. `/node` and `engines`
+  (Node 20) are unchanged.
   The server and browser readers share their format sniffing, zip part selection, cell rules,
   limits and row checks, so they agree by construction.
 - `grouping` option on `runImport` and `createImportRouter`: server-side grouping is opt-in.
@@ -88,6 +72,41 @@ Dynamic Entity 3.0, which relies on the 1.0 refusal, failed against it.
   browser reader reads them the same way, including a cached `0` or `false`, which ExcelJS's
   `Workbook.xlsx.load` would drop. Both take the formulas out of the worksheet before parsing;
   an import never reads a formula itself.
+
+---
+
+## [1.1.0-rc.3]
+
+The third release candidate of 1.1. As rc.2, with the one finding of rc.2's test round fixed
+(docs/1.1-rc-feedback.md, R1-1 and R1-2). **Every 1.0 test passes unchanged.** Published to
+`next`; `latest` stays 1.0.0.
+
+- Fixed: reading a workbook through `/browser` on a runtime that has `DecompressionStream` but
+  not its `deflate-raw` format (Node 20.0 to 20.11, Chrome and Edge 80 to 102) threw the
+  constructor's raw `TypeError`. It now throws `ImportError` with a new code,
+  `UNSUPPORTED_RUNTIME`, naming the versions that can read a workbook; a CSV still reads.
+- Added: the minimum versions for reading a workbook in the browser path, in the README and
+  the `/browser` entry: Chrome and Edge 103, Firefox 113, Safari 16.4, Node 20.12. `/node` and
+  `engines` (Node 20) are unchanged.
+- CI runs the browser reader on Node 20.11, where it must read a CSV and refuse a workbook with
+  `UNSUPPORTED_RUNTIME` (`npm run check:browser-runtime`).
+
+The full notes are under 1.1.0.
+
+---
+
+## [1.1.0-rc.2]
+
+The second release candidate of 1.1 (docs/1.1-spec.md): a browser file reader that matches the
+server's, grouping in the streaming runner (opt-in), and formula results read as their typed
+values. Every change is an addition except the formula fix and the group limits now enforced by
+`applyMapping`. **Every 1.0 test passes unchanged.** Published to `next`;
+`latest` stays 1.0.0.
+
+Since rc.1: server-side grouping is opt-in (`grouping: true`). rc.1 grouped by default, and
+Dynamic Entity 3.0, which relies on the 1.0 refusal, failed against it.
+
+The full notes are under 1.1.0.
 
 ---
 
