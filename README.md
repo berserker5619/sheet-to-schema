@@ -200,6 +200,14 @@ file is a workbook.
   browser does not, because there the file is the user's own and only their tab is at risk.
 - **The first sheet, header row 1**, as on the server.
 
+Known limitations of the browser path:
+
+- **It needs `DecompressionStream`** (every current browser, and Node 20) to read a workbook;
+  without it, a workbook fails with a message saying so. A CSV needs nothing.
+- **A broken archive may be described differently.** Both readers refuse it, but the server
+  reads entries front to back and the browser reads the zip's directory, so the message for a
+  damaged `.xlsx` can differ. Every well-formed workbook in the parity fixtures reads the same.
+
 ## On a server: `sheet-to-schema/node`
 
 ```ts
@@ -265,6 +273,15 @@ Four things to know before deploying it:
 | `RECORD_` | The record built from a row is not valid, or needs a warning. | `RECORD_REQUIRED`, `RECORD_GROUP_CONFLICT` |
 
 `PLAN_PROBLEM_CODES`, `CELL_PROBLEM_CODES` and `RECORD_PROBLEM_CODES` list them all.
+
+A grouped import can also stop as a whole, with an `ImportFailure` (`IMPORT_FAILURE_CODES`).
+`applyMapping` and `runImport` throw it; over HTTP it is the error body's `code`:
+
+| Code | HTTP | Raised when |
+| --- | --- | --- |
+| `GROUP_NOT_CONTIGUOUS` | 422 | A group's key comes back after its rows ended. `details` has the key and both rows. |
+| `GROUP_TOO_LARGE` | 413 | A group has more than `maxGroupRows` rows. |
+| `TOO_MANY_GROUPS` | 413 | More than `maxGroups` groups, or more than `maxGroupKeyBytes` of group keys. |
 
 ## Licence
 

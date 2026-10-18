@@ -32,6 +32,7 @@
 import zlib from 'node:zlib';
 import { ImportError } from './errors';
 import type { ImportLimits } from './limits';
+import { stripWorksheet } from './strip-formulas';
 import {
   CENTRAL_HEADER,
   DEFLATED,
@@ -41,6 +42,7 @@ import {
   PartPicker,
   RATIO_FLOOR,
   refuse,
+  crc32,
   repack,
   STORED,
   ZIP64_SENTINEL,
@@ -53,24 +55,6 @@ const SLICE = 64 * 1024;
 
 /** The largest size a non-zip64 header can express. */
 const ZIP32_MAX = 0xffffffff;
-
-// ─── CRC-32, because a rebuilt entry needs a checksum the reader will accept ──────────────
-
-const CRC_TABLE = (() => {
-  const table = new Int32Array(256);
-  for (let i = 0; i < 256; i++) {
-    let c = i;
-    for (let k = 0; k < 8; k++) c = c & 1 ? 0xedb88320 ^ (c >>> 1) : c >>> 1;
-    table[i] = c;
-  }
-  return table;
-})();
-
-function crc32(current: number, bytes: Uint8Array): number {
-  let c = ~current;
-  for (let i = 0; i < bytes.length; i++) c = CRC_TABLE[(c ^ bytes[i]) & 0xff] ^ (c >>> 8);
-  return ~c >>> 0;
-}
 
 // ─── Reading ──────────────────────────────────────────────────────────────────────────────
 
@@ -438,6 +422,17 @@ export async function guardZip(
       }
       picker.keep(name, { name, method, data: read.data, inflated: read.inflated, crc: read.crc });
     }
+  }
+
+  // The worksheet without its formulas, so each formula cell reads as its cached result's type
+  // (`strip-formulas.ts`). Rebuilt here, once the sheet is known, and counted against the same
+  // retention bound as what it replaces.
+  const sheet = picker.sheet ? picker.kept.get(picker.sheet.name) : undefined;
+  if (sheet) {
+    const stripped = await stripWorksheet(sheet);
+    budget.retained += stripped.data.length - sheet.data.length;
+    if (budget.retained > limits.maxBytes) refuse(`The workbook is larger than the ${limits.maxBytes} byte limit.`);
+    picker.kept.set(sheet.name, { ...sheet, ...stripped });
   }
 
   const archive = repack(picker.ordered());

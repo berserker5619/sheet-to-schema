@@ -73,6 +73,24 @@ export const refuse = (message: string): never => {
   throw new ImportError('ARCHIVE_REFUSED', message);
 };
 
+// ─── CRC-32, because a rebuilt entry needs a checksum the reader will accept ──────────────
+
+const CRC_TABLE = (() => {
+  const table = new Int32Array(256);
+  for (let i = 0; i < 256; i++) {
+    let c = i;
+    for (let k = 0; k < 8; k++) c = c & 1 ? 0xedb88320 ^ (c >>> 1) : c >>> 1;
+    table[i] = c;
+  }
+  return table;
+})();
+
+export function crc32(current: number, bytes: Uint8Array): number {
+  let c = ~current;
+  for (let i = 0; i < bytes.length; i++) c = CRC_TABLE[(c ^ bytes[i]) & 0xff] ^ (c >>> 8);
+  return ~c >>> 0;
+}
+
 /** One part of the rebuilt archive: its data exactly as it was, still compressed. */
 export interface PackedEntry {
   name: string;
@@ -198,6 +216,14 @@ const malformed = (): never => {
  * stored entry without a declared size. A directory that cannot be read is `MALFORMED_FILE`.
  */
 export function pickFromDirectory(bytes: Uint8Array, limits: DirectoryLimits): Uint8Array {
+  return repack(pickParts(bytes, limits));
+}
+
+/**
+ * The parts `pickFromDirectory` keeps, in the parser's order, before they are repacked: the
+ * worksheet is the last. For a caller that rebuilds the worksheet first.
+ */
+export function pickParts(bytes: Uint8Array, limits: DirectoryLimits): PackedEntry[] {
   const view = new DataView(bytes.buffer, bytes.byteOffset, bytes.byteLength);
   const u16 = (at: number): number => view.getUint16(at, true);
   const u32 = (at: number): number => view.getUint32(at, true);
@@ -263,5 +289,5 @@ export function pickFromDirectory(bytes: Uint8Array, limits: DirectoryLimits): U
     picker.keep(name, { name, method, data: bytes.subarray(start, start + compressed), inflated, crc });
   }
 
-  return repack(picker.ordered());
+  return picker.ordered();
 }

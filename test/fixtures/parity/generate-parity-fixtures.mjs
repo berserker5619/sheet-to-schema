@@ -86,16 +86,16 @@ async function blankRows() {
 }
 
 /**
- * Formula results of every stored type, plain and shared. The server's streaming reader reduces
- * them (a boolean to 1 or 0, an error to no result, a date-formatted number to its serial), and
- * the browser reader must reduce them the same way.
+ * Formula results of every stored type, plain and shared. Each reads as the typed cell its
+ * cached result is: a date-formatted number a Date, a boolean a boolean, an error its text.
+ * (1.0 read them as a serial, 1 or 0, and an empty cell.)
  */
 async function formulaResults() {
   const wb = new ExcelJS.Workbook();
   const ws = wb.addWorksheet('Formulas');
   ws.addRow(['Kind', 'Bool', 'Error', 'Date', 'Number', 'Text', 'No result']);
   ws.addRow([
-    'first',
+    'plain',
     { formula: 'TRUE()', result: true },
     { formula: '1/0', result: { error: '#DIV/0!' } },
     { formula: 'DATE(2026,10,18)', result: new Date(Date.UTC(2026, 9, 18)) },
@@ -105,13 +105,22 @@ async function formulaResults() {
   ]);
   ws.addRow([
     'shared',
-    // Not `false`, and not an error: those two differ between the readers, and
-    // src/browser/known-differences.spec.ts pins them instead.
-    { sharedFormula: 'B2', result: true },
-    { formula: 'NA()', result: { error: '#N/A' } },
+    // A shared formula's cached false: ExcelJS's Workbook.xlsx.load drops it unless the
+    // formula is taken out first.
+    { sharedFormula: 'B2', result: false },
+    { sharedFormula: 'C2', result: { error: '#DIV/0!' } },
     { sharedFormula: 'D2', result: new Date(Date.UTC(1999, 11, 31, 12)) },
     { sharedFormula: 'E2', result: 3.25 },
     { sharedFormula: 'F2', result: 'cd' },
+    '',
+  ]);
+  ws.addRow([
+    'plain false',
+    { formula: 'FALSE()', result: false },
+    { formula: 'NA()', result: { error: '#N/A' } },
+    { formula: 'D2+1', result: new Date(Date.UTC(2026, 9, 19)) },
+    { formula: '0*1', result: 0 },
+    { formula: '""', result: '' },
     '',
   ]);
   ws.getColumn(4).numFmt = 'yyyy-mm-dd hh:mm';

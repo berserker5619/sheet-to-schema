@@ -32,19 +32,31 @@ This project follows [Semantic Versioning](https://semver.org/spec/v2.0.0.html).
 - `runImport` and the router group rows. A contiguous grouped plan, which 1.0 refused with
   `INVALID_PLAN` (`PLAN_GROUP`), now imports, with the same records, errors, warnings and counts
   as `applyMapping`; a group that straddles a batch is carried into the next and handed to
-  `onBatch` whole. Nobody could depend on the refusal usefully, so it is treated as a feature.
-  `contiguous: false` is still refused, and `GROUPING_NOT_STREAMED` now says so.
+  `onBatch` whole. Nobody could depend on the refusal usefully, so it is treated as a feature;
+  the 1.0 tests that asserted the refusal were updated to assert the import. `contiguous: false`
+  is still refused, and `GROUPING_NOT_STREAMED` now says so.
 - `ImportLimits` includes the group limits, with the same defaults, enforced while streaming.
   A run past one, or with a closed key that comes back, throws the engine's `ImportFailure`;
   the router answers it with 413 (`GROUP_TOO_LARGE`, `TOO_MANY_GROUPS`) or 422
-  (`GROUP_NOT_CONTIGUOUS`), carrying the key and rows. `ImportErrorBody.error.code` may now be
-  one of those three codes.
-- `BatchInfo.firstRow` is the first row a batch's records were built from: where a group
-  carried into the batch began, or the batch's first row as before.
+  (`GROUP_NOT_CONTIGUOUS`), carrying the key and rows. These three codes can now appear in
+  HTTP error bodies: `ImportErrorBody.error.code` may be one of them.
+- `BatchInfo.firstRow`, for a grouped import, is the first row the batch's records were built
+  from: where a group carried into the batch from the one before began. Without grouping it is
+  the batch's first row, as in 1.0.
 - `applyMapping` enforces the group limits: `maxGroupRows` and `maxGroups` in both grouping
   modes, `maxGroupKeyBytes` for contiguous groups. A grouped sheet past a default throws an
   `ImportFailure` (`GROUP_TOO_LARGE` or `TOO_MANY_GROUPS`) where 1.0 imported it; pass
   `groupLimits` to raise the limit.
+
+### Fixed
+
+- Formula results on the server. 1.0 read a formula's cached result as ExcelJS's streaming
+  reader reduced it: a date-formatted result as its serial number, a cached boolean as `1` or
+  `0`, a cached error as an empty cell. A formula cell is now the typed cell its cached result
+  is: a `Date` (by the same rule as a typed date cell), a boolean, the error text (`#N/A`). The
+  browser reader reads them the same way, including a cached `0` or `false`, which ExcelJS's
+  `Workbook.xlsx.load` would drop. Both take the formulas out of the worksheet before parsing;
+  an import never reads a formula itself.
 
 ---
 

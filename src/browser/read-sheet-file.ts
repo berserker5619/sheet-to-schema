@@ -16,11 +16,11 @@
  * `WorkbookReader`, which only its Node build has; a browser build has `Workbook.xlsx.load`.
  * Two things make `load` read what the streaming reader reads:
  *
+ * - the worksheet's formulas are taken out first, as the server takes them out
+ *   (`shared/formula-filter.ts`), so a formula cell is its cached result, typed, on both sides;
  * - it is told to ignore every worksheet node but `sheetData`, as the streaming reader does.
  *   Merges, hyperlinks and the rest are never applied (a merged range's covered cells stay
  *   empty, a hyperlink cell stays its text), and a part never parsed cannot be hostile;
- * - a formula's cached result is reduced the way the streaming reader reduces it
- *   (`streamedResult`).
  */
 import type ExcelJSModule from 'exceljs';
 import { cellText, completeFirstLine, createCsvReader, detectDelimiter, type CsvDelimiter, type SheetGrid } from 'sheet-to-schema';
@@ -30,7 +30,9 @@ import { loadPeer } from '../shared/optional';
 import { guardHeaders, guardRow } from '../shared/sheet-guards';
 import { detectFormat, MAGIC_BYTES } from '../shared/sheet-format';
 import { rowCells } from '../shared/xlsx-cells';
-import { pickFromDirectory } from '../shared/zip';
+import { filterFormulas } from '../shared/formula-filter';
+import { inflate } from './inflate';
+import { crc32, pickParts, repack, STORED, type PackedEntry } from '../shared/zip';
 
 /** The limits a browser read enforces. Each one left out is the server's default. */
 export type BrowserLimits = Pick<ImportLimits, 'maxBytes' | 'maxRows' | 'maxColumns' | 'maxCellLength' | 'maxZipEntries'>;
@@ -168,8 +170,10 @@ function guardGrid(raw: Iterable<unknown[]>, limits: ImportLimits): SheetGrid {
  * even loaded, so an over-limit zip never reaches it.
  */
 async function xlsxGrid(bytes: Uint8Array, limits: ImportLimits): Promise<SheetGrid> {
-  const archive = pickFromDirectory(bytes, limits);
+  const parts = pickParts(bytes, limits);
   const Excel = await loadExcel();
+  const filtered = await withoutFormulas(parts[parts.length - 1], limits);
+  const archive = repack([...parts.slice(0, -1), filtered]);
   const workbook = new Excel.Workbook();
   try {
     await workbook.xlsx.load(archive as unknown as Parameters<typeof workbook.xlsx.load>[0], { ignoreNodes: IGNORED_NODES } as object);
@@ -183,7 +187,19 @@ async function xlsxGrid(bytes: Uint8Array, limits: ImportLimits): Promise<SheetG
     // "imported 0 rows" is the wrong thing to say about it.
     throw new ImportError('MALFORMED_FILE', 'This workbook has no readable rows.');
   }
-  return guardGrid(sheetRows(sheet, workbook.properties.date1904 === true, limits), limits);
+  return guardGrid(sheetRows(sheet, limits), limits);
+}
+
+/**
+ * The worksheet without its formulas, stored rather than deflated: a browser has a standard
+ * decompressor (`DecompressionStream`) and the archive is only read here, so there is nothing to
+ * gain by compressing it again. Inflating is where an archive's real size shows, so it is
+ * bounded by `maxUncompressedBytes` as it goes, with the server's message.
+ */
+async function withoutFormulas(sheet: PackedEntry, limits: ImportLimits): Promise<PackedEntry> {
+  const xml = sheet.method === STORED ? sheet.data : await inflate(sheet.data, limits.maxUncompressedBytes);
+  const data = filterFormulas(xml);
+  return { name: sheet.name, method: STORED, data, inflated: data.length, crc: crc32(0, data) };
 }
 
 /** Every worksheet node `load` would parse but the server's streaming reader does not. */
@@ -193,33 +209,11 @@ const IGNORED_NODES = [
   'drawing', 'sheetProtection', 'tableParts', 'conditionalFormatting', 'extLst',
 ];
 
-const DAY_MS = 24 * 60 * 60 * 1000;
-
-/**
- * A formula cell's value as the server's streaming reader produces it.
- *
- * That reader keeps a formula's cached result as text when Excel stored it as text, and
- * otherwise as `parseFloat` of the stored text, applying no style. So a cached boolean is `1`
- * or `0`, an error is no result (an empty cell), and a date-formatted result is its serial
- * number, where `load` would give `true`, `{ error }` and a `Date`. Mirrored, not fixed: the
- * server's result is the reference, and changing both sides is a decision of its own.
- */
-function streamedResult(value: unknown, date1904: boolean): unknown {
-  if (value === null || typeof value !== 'object' || value instanceof Date) return value;
-  const cell = value as Record<string, unknown>;
-  if (!('formula' in cell || 'sharedFormula' in cell)) return value;
-  const result = cell['result'];
-  if (typeof result === 'boolean') return { ...cell, result: result ? 1 : 0 };
-  if (result instanceof Date) return { ...cell, result: result.getTime() / DAY_MS + (date1904 ? 24107 : 25569) };
-  if (result !== null && typeof result === 'object') return { ...cell, result: undefined };
-  return value;
-}
-
 /**
  * The server's `xlsxRows` over a loaded worksheet: every row from 1, a gap filled with blank
  * rows so later rows keep their numbers, a row past `maxRows` refused before its gap is made.
  */
-function* sheetRows(sheet: ExcelJSModule.Worksheet, date1904: boolean, limits: ImportLimits): Generator<unknown[]> {
+function* sheetRows(sheet: ExcelJSModule.Worksheet, limits: ImportLimits): Generator<unknown[]> {
   let expected = 1;
   for (let number = 1; number <= sheet.rowCount; number++) {
     const row = sheet.findRow(number);
@@ -233,7 +227,7 @@ function* sheetRows(sheet: ExcelJSModule.Worksheet, date1904: boolean, limits: I
     }
     const values: unknown[] = [];
     row.eachCell((cell, column) => {
-      values[column] = streamedResult(cell.value, date1904);
+      values[column] = cell.value;
     });
     yield rowCells(values);
     expected = number + 1;

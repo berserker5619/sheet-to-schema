@@ -9,6 +9,7 @@
  * bundler gives a browser app (the package's `browser` field), and the Node build's `stream`,
  * which is all the server's reader touches. Each side runs on the build it ships against.
  */
+import { DecompressionStream as NodeDecompressionStream } from 'node:stream/web';
 import { TextDecoder as NodeTextDecoder, TextEncoder as NodeTextEncoder } from 'node:util';
 
 jest.mock('exceljs', () => {
@@ -17,11 +18,13 @@ jest.mock('exceljs', () => {
   return { __esModule: true, default: { Workbook: browser.Workbook, ValueType: browser.ValueType, stream: node.stream } };
 });
 
-// What jsdom leaves out and the server's reader (not the browser's) needs, under Jest only.
+// What jsdom leaves out, under Jest only: the server's reader needs the first three, and the
+// browser's needs `DecompressionStream`, which every current browser has.
 const globals = globalThis as Record<string, unknown>;
 globals['setImmediate'] ??= (callback: () => void) => setTimeout(callback, 0);
 globals['TextDecoder'] ??= NodeTextDecoder;
 globals['TextEncoder'] ??= NodeTextEncoder;
+globals['DecompressionStream'] ??= NodeDecompressionStream;
 
 import { ALL_FIXTURES, fixtureBytes, nameOf, serverGrid } from './parity.fixtures';
 import { readSheetFile } from './read-sheet-file';
