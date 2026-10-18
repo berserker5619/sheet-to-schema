@@ -594,9 +594,9 @@ describe('delimited text that is not comma-separated', () => {
 });
 
 /**
- * Grouping needs an open group carried across a batch boundary, which is Phase 3 (spec §5).
- * Until then a grouped plan is refused, never ignored: ignoring it would import one record
- * per row and report success.
+ * A grouped plan streams since 1.1 (docs/1.1-spec.md, B), and a non-contiguous one is still
+ * refused before a row is read: it would hold every group to the end of the file. The
+ * streaming parity, limits and memory are in `run-import-grouping.spec.ts`.
  */
 describe('a plan that groups rows', () => {
   const ORDERS = jsonSchemaAdapter({
@@ -611,40 +611,48 @@ describe('a plan that groups rows', () => {
     group: { key: [0], collect: ['items'] },
   };
   const SHEET = 'orderId,sku\r\nA,S1\r\nA,S2\r\n';
+  const scattered = { ...grouped, group: { ...grouped.group, contiguous: false } };
 
-  it('is refused as INVALID_PLAN with a PLAN_GROUP problem that says where grouping does work', async () => {
-    const failure = await runImport({ stream: chunked(SHEET), plan: grouped, adapter: ORDERS, ctx: undefined }).catch((error: unknown) => error);
+  it('imports a contiguous grouped plan, one record per group', async () => {
+    const records: Record<string, unknown>[] = [];
+    const result = await runImport({ stream: chunked(SHEET), plan: grouped, adapter: ORDERS, ctx: undefined, onBatch: batch => void records.push(...batch) });
+    expect(records).toEqual([{ orderId: 'A', items: [{ sku: 'S1' }, { sku: 'S2' }] }]);
+    expect(result).toMatchObject({ imported: 1, rowsInImported: 2, rowsRead: 2 });
+  });
+
+  it('refuses contiguous: false as INVALID_PLAN with a PLAN_GROUP problem that says what to do', async () => {
+    const failure = await runImport({ stream: chunked(SHEET), plan: scattered, adapter: ORDERS, ctx: undefined }).catch((error: unknown) => error);
     expect(failure).toBeInstanceOf(ImportError);
     expect(failure).toMatchObject({ code: 'INVALID_PLAN', status: 400 });
     expect((failure as ImportError).message).toBe(GROUPING_NOT_STREAMED);
     expect((failure as ImportError).details).toEqual([{ level: 'error', code: 'PLAN_GROUP', path: 'group', message: GROUPING_NOT_STREAMED }]);
-    expect(GROUPING_NOT_STREAMED).toContain('does not group rows into records yet');
-    expect(GROUPING_NOT_STREAMED).toContain('browser import does');
+    expect(GROUPING_NOT_STREAMED).toContain('Sort the sheet by the key columns');
+    expect(GROUPING_NOT_STREAMED).toContain('in the browser');
   });
 
-  it('is refused before a row is read, and the request body is closed', async () => {
+  it('refuses contiguous: false before a row is read, and the request body is closed', async () => {
     let pulled = false;
     async function* watched(): AsyncGenerator<Uint8Array> {
       pulled = true;
       yield Buffer.from(SHEET);
     }
-    await expect(runImport({ stream: watched(), plan: grouped, adapter: ORDERS, ctx: undefined })).rejects.toMatchObject({ code: 'INVALID_PLAN' });
+    await expect(runImport({ stream: watched(), plan: scattered, adapter: ORDERS, ctx: undefined })).rejects.toMatchObject({ code: 'INVALID_PLAN' });
     expect(pulled).toBe(false);
 
     const { stream, destroyed } = trackedStream(SHEET);
     const written: unknown[] = [];
-    await expect(runImport({ stream, plan: grouped, adapter: ORDERS, ctx: undefined, onBatch: batch => void written.push(...batch) })).rejects.toThrow();
+    await expect(runImport({ stream, plan: scattered, adapter: ORDERS, ctx: undefined, onBatch: batch => void written.push(...batch) })).rejects.toThrow();
     expect(destroyed()).toBe(true);
     expect(written).toEqual([]);
   });
 
   it('carries the plan\'s own warnings with the refusal', async () => {
-    const failure = await runImport({ stream: chunked(SHEET), plan: { ...grouped, target: 'orders' }, adapter: ORDERS, ctx: undefined }).catch((error: unknown) => error);
+    const failure = await runImport({ stream: chunked(SHEET), plan: { ...scattered, target: 'orders' }, adapter: ORDERS, ctx: undefined }).catch((error: unknown) => error);
     expect(((failure as ImportError).details as { code: string }[]).map(problem => problem.code)).toEqual(['PLAN_TARGET_MISMATCH', 'PLAN_GROUP']);
   });
 
-  it('is what the in-memory engine does do, with the same plan', () => {
-    const result = applyMapping(parseCsv(SHEET).rows, grouped, ORDERS, undefined);
+  it('is what the in-memory engine does, with the same plan', () => {
+    const result = applyMapping(parseCsv(SHEET).rows, scattered, ORDERS, undefined);
     expect(result.records).toEqual([{ orderId: 'A', items: [{ sku: 'S1' }, { sku: 'S2' }] }]);
   });
 
@@ -678,7 +686,7 @@ describe('what the run reports', () => {
     expect(preview.suggestion.entries.map(entry => entry.ref)).toEqual(['name', ...[0, 1, 2, 3, 4].map(n => `phones.${n}.number`)]);
   });
 
-  it('suggests from the headers alone, so it never proposes a group this runner would refuse', async () => {
+  it('suggests from the headers alone, so it never proposes a group the user has not confirmed', async () => {
     const orders = jsonSchemaAdapter({
       $id: 'order',
       type: 'object',

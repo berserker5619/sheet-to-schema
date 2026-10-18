@@ -95,6 +95,11 @@ export class GroupAccumulator<R extends GroupableRow> {
     return finished;
   }
 
+  /** The sheet row the open run starts at, if one is open. Non-contiguous mode holds no run. */
+  openFrom(): number | undefined {
+    return this.current?.group.members[0].rowNumber;
+  }
+
   /** No more rows: the groups still held, oldest first. */
   finish(): Group<R>[] {
     if (!this.group.contiguous) return this.all.splice(0);

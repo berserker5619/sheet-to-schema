@@ -44,8 +44,8 @@ export { DATE_ORDERS, inferDateOrder } from './date-order';
 export type { DateOrder } from './date-order';
 
 // ─── Applying a plan ────────────────────────────────────────────────────────
-export { applyMapping, preparePlan } from './apply-mapping';
-export type { ApplyMappingOptions, PreparedPlan } from './apply-mapping';
+export { applyMapping, preparePlan, startMapping } from './apply-mapping';
+export type { ApplyMappingOptions, MappingBatch, MappingSession, PreparedPlan } from './apply-mapping';
 export { validateRecord } from './validate-record';
 export type { ImportResult, ImportRowError } from './result.types';
 export { IMPORT_FAILURE_CODES, ImportFailure } from './import-failure';

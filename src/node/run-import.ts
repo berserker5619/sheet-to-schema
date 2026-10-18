@@ -13,18 +13,21 @@
  *   every row fails is otherwise as large as the file;
  * - the plan is checked before a single row is read.
  *
- * **Grouping is not here yet.** A grouped record can span a batch boundary, and the streaming
- * form of spec §5 (an open group carried across it, with `maxGroupRows`, `maxGroups` and
- * `maxGroupKeyBytes`) is Phase 3. Until then a plan with `group` is refused before a row is
- * read, with a message that says so. The in-memory `applyMapping` does group.
+ * **Grouping streams** (docs/1.1-spec.md, B). Rows go through the main entry's mapping session,
+ * the one `applyMapping` runs on, so a grouped file gives the same records here as in memory.
+ * A group that straddles a batch boundary is carried into the next batch and handed to
+ * `onBatch` whole. Peak memory is the batch, the open group and the closed keys, each bounded
+ * (`batchSize`, `maxGroupRows`, `maxGroups` and `maxGroupKeyBytes`); past one, or when a closed
+ * key comes back, the run stops with the engine's `ImportFailure`. Non-contiguous grouping
+ * would hold every group to the end, so it is refused before a row is read.
  */
 
 import {
-  applyMapping,
   cellText,
   decimalMarkFor,
   preparePlan,
   slotsFor,
+  startMapping,
   suggestMapping,
   type CsvDelimiter,
   type DateOrder,
@@ -42,7 +45,10 @@ import { readSheet, type SheetFormat } from './read-sheet';
 export interface BatchInfo {
   /** Zero-based batch number. */
   index: number;
-  /** Spreadsheet row number of the first row this batch was built from. */
+  /**
+   * Spreadsheet row number of the first row this batch's records were built from: the batch's
+   * first row, or where a group carried into it began.
+   */
   firstRow: number;
   /** Records handed over before this batch, so `imported + records.length` is the running total. */
   imported: number;
@@ -98,7 +104,7 @@ export interface ImportRunResult {
    * which is capped: the distinct rows in it say how many fitted in the cap, not how many failed.
    */
   failed: number;
-  /** Sheet rows the imported records came from. Equal to `imported` until grouping lands. */
+  /** Sheet rows the imported records came from. `rowsInImported + skipped + failed === rowsRead`. */
   rowsInImported: number;
   /** A **sample**, capped at `limits.maxReportedErrors`. `errorCount` is the true total. */
   errors: ImportRowError[];
@@ -122,9 +128,13 @@ export interface ImportRunResult {
   format?: SheetFormat;
 }
 
-/** What a server tells a client whose plan groups rows, until the streaming runner can. */
+/**
+ * What a server tells a client whose plan groups rows that are not together
+ * (`group.contiguous: false`). Holding every group to the end of the file is not bounded by a
+ * batch, so the streaming runner does not; the in-memory engine does.
+ */
 export const GROUPING_NOT_STREAMED =
-  'This server version does not group rows into records yet. The browser import does: import this file there, or remove "group" from the plan.';
+  'This server groups rows only when each group\'s rows are together. Sort the sheet by the key columns and set "contiguous" to true, or import this file in the browser, which can gather them.';
 
 export async function runImport<TMeta, TCtx>(options: RunImportOptions<TMeta, TCtx>): Promise<ImportRunResult> {
   const limits = resolveLimits(options.limits);
@@ -153,9 +163,9 @@ export async function runImport<TMeta, TCtx>(options: RunImportOptions<TMeta, TC
     };
   }
 
-  if (prepared.plan.group) {
-    // Refused, not ignored: a runner that ignored `group` would import one record per row
-    // and report success (spec §4, "Talking to an older server").
+  if (prepared.plan.group && !prepared.plan.group.contiguous) {
+    // Refused, not ignored: a runner that ignored `contiguous: false` would fail at the first
+    // key that comes back, after writing everything before it.
     destroySource(options.stream);
     const problem: PlanProblem = { level: 'error', code: 'PLAN_GROUP', path: 'group', message: GROUPING_NOT_STREAMED };
     throw new ImportError('INVALID_PLAN', GROUPING_NOT_STREAMED, { details: [...prepared.problems, problem] });
@@ -164,6 +174,11 @@ export async function runImport<TMeta, TCtx>(options: RunImportOptions<TMeta, TC
   const sheet = await readSheet({ stream: options.stream, filename: options.filename, limits });
 
   const decimal = options.decimal ?? decimalMarkFor(sheet.delimiter);
+  const session = startMapping(prepared.plan, adapter, ctx, {
+    decimal,
+    dateOrder: options.dateOrder,
+    groupLimits: { maxGroupRows: limits.maxGroupRows, maxGroups: limits.maxGroups, maxGroupKeyBytes: limits.maxGroupKeyBytes },
+  });
   const errors: ImportRowError[] = [];
   const warnings: ImportRowError[] = [];
   let errorCount = 0;
@@ -171,6 +186,7 @@ export async function runImport<TMeta, TCtx>(options: RunImportOptions<TMeta, TC
   let imported = 0;
   let skipped = 0;
   let failed = 0;
+  let rowsInImported = 0;
   let rowsRead = 0;
   let batchIndex = 0;
 
@@ -186,25 +202,37 @@ export async function runImport<TMeta, TCtx>(options: RunImportOptions<TMeta, TC
     }
   };
 
-  const flush = async (): Promise<void> => {
-    if (!batch.length) return;
+  /** Map one batch, or at the end of the file what is still held, and hand its records over. */
+  const flush = async (last: boolean): Promise<void> => {
+    if (!batch.length && !last) return;
     const rows = batch;
     batch = [];
 
-    // The plan as `preparePlan` left it: read, upgraded and checked once, above.
-    const result = applyMapping(rows, prepared.plan, adapter, ctx, { decimal, dateOrder: options.dateOrder, firstRowNumber: firstRow });
+    // A record handed over now may have begun in an earlier batch: its group was carried here.
+    const builtFrom = Math.min(firstRow, session.openFrom() ?? firstRow);
+    const pushed = rows.length ? session.push(rows, firstRow) : null;
+    const ended = last ? session.finish() : null;
+    const result = {
+      records: [...(pushed?.records ?? []), ...(ended?.records ?? [])],
+      errors: [...(pushed?.errors ?? []), ...(ended?.errors ?? [])],
+      warnings: [...(pushed?.warnings ?? []), ...(ended?.warnings ?? [])],
+      skipped: (pushed?.skipped ?? 0) + (ended?.skipped ?? 0),
+      failed: (pushed?.failed ?? 0) + (ended?.failed ?? 0),
+      rowsInImported: (pushed?.rowsInImported ?? 0) + (ended?.rowsInImported ?? 0),
+    };
 
     skipped += result.skipped;
     errorCount += result.errors.length;
-    warningCount += result.warnings?.length ?? 0;
-    // Rows, not problems: one row failing two checks is one row to go and fix. No row spans
-    // a batch while grouping is refused, so the per-batch counts add up exactly.
-    failed += result.failed ?? 0;
+    warningCount += result.warnings.length;
+    // Rows, not problems: one row failing two checks is one row to go and fix. A group's rows
+    // are counted with its record, in the batch that finished it, so the counts add up exactly.
+    failed += result.failed;
+    rowsInImported += result.rowsInImported;
     retain(errors, result.errors);
-    retain(warnings, result.warnings ?? []);
+    retain(warnings, result.warnings);
 
     if (result.records.length && onBatch) {
-      const info: BatchInfo = { index: batchIndex, firstRow, imported };
+      const info: BatchInfo = { index: batchIndex, firstRow: builtFrom, imported };
       try {
         // Awaited before the next batch is pulled. This is the backpressure.
         await onBatch(result.records, info);
@@ -220,16 +248,16 @@ export async function runImport<TMeta, TCtx>(options: RunImportOptions<TMeta, TC
 
     imported += result.records.length;
     firstRow += rows.length;
-    batchIndex++;
+    if (rows.length || result.records.length) batchIndex++;
   };
 
   try {
     for await (const row of sheet.rows) {
       rowsRead++;
       batch.push(row as unknown[]);
-      if (batch.length >= limits.batchSize) await flush();
+      if (batch.length >= limits.batchSize) await flush(false);
     }
-    await flush();
+    await flush(true);
   } catch (error) {
     // A failure anywhere — a limit, a malformed file, the consumer's own writer — leaves the
     // request body half-read. Destroying it is what stops a hostile uploader from holding a
@@ -242,7 +270,7 @@ export async function runImport<TMeta, TCtx>(options: RunImportOptions<TMeta, TC
     imported,
     skipped,
     failed,
-    rowsInImported: imported,
+    rowsInImported,
     errors,
     errorCount,
     truncated: errorCount > errors.length,
@@ -290,8 +318,8 @@ export interface SheetPreview {
  * endpoint that skipped them would be the cheapest way in.
  *
  * The suggestion is made from the headers alone, which is what a browser makes of them. It is
- * not given the sample rows: with them it would propose a group (spec §8), and `runImport`
- * here refuses a grouped plan until Phase 3.
+ * not given the sample rows, with which it would propose a group (spec §8): a group is the
+ * user's to confirm on the mapping screen, and a preview is not that screen.
  */
 export async function previewSheet<TMeta, TCtx>(options: PreviewSheetOptions<TMeta, TCtx>): Promise<SheetPreview> {
   const limits = resolveLimits(options.limits);

@@ -731,12 +731,50 @@ describe('a plan that groups rows, over HTTP', () => {
   });
   const grouped = { planVersion: 2, target: 'order', entries: [{ ref: 'orderId', column: 0 }, { ref: 'items.sku', column: 1 }], group: { key: [0], collect: ['items'] } };
 
-  it('is refused as INVALID_PLAN, saying this server does not group yet and the browser does, and writes nothing', async () => {
+  it('validates and imports a contiguous grouped plan', async () => {
+    const written: Record<string, unknown>[] = [];
+    for (const route of ['validate', 'import']) {
+      const response = await request(app({ bindings: { order: { adapter: ORDERS, ctx: undefined } } }, written))
+        .post(`/import/order/${route}`)
+        .field('plan', JSON.stringify(grouped))
+        .attach('file', Buffer.from('orderId,sku\r\nA,S1\r\nA,S2\r\nB,S3\r\n'), 'orders.csv');
+      expect(response.status).toBe(200);
+      expect(response.body).toMatchObject({ written: route === 'import', imported: 2, rowsInImported: 3, rowsRead: 3 });
+    }
+    expect(written).toEqual([
+      { orderId: 'A', items: [{ sku: 'S1' }, { sku: 'S2' }] },
+      { orderId: 'B', items: [{ sku: 'S3' }] },
+    ]);
+  });
+
+  it('answers a key that comes back with 422 GROUP_NOT_CONTIGUOUS, naming the key and both rows', async () => {
+    const response = await request(app({ bindings: { order: { adapter: ORDERS, ctx: undefined } } }))
+      .post('/import/order/validate')
+      .field('plan', JSON.stringify(grouped))
+      .attach('file', Buffer.from('orderId,sku\r\nA,S1\r\nB,S2\r\nA,S3\r\n'), 'orders.csv');
+    expect(response.status).toBe(422);
+    expect(response.body.error).toMatchObject({ code: 'GROUP_NOT_CONTIGUOUS', details: { key: ['A'], rows: [2, 4] } });
+  });
+
+  it('answers a group past maxGroupRows, and too many groups, with 413', async () => {
+    const server = app({ bindings: { order: { adapter: ORDERS, ctx: undefined } }, limits: { maxGroupRows: 1, maxGroups: 5 } });
+    const large = await request(server).post('/import/order/validate').field('plan', JSON.stringify(grouped)).attach('file', Buffer.from('orderId,sku\r\nA,S1\r\nA,S2\r\n'), 'o.csv');
+    expect(large.status).toBe(413);
+    expect(large.body.error.code).toBe('GROUP_TOO_LARGE');
+    const many = await request(app({ bindings: { order: { adapter: ORDERS, ctx: undefined } }, limits: { maxGroups: 1 } }))
+      .post('/import/order/validate')
+      .field('plan', JSON.stringify(grouped))
+      .attach('file', Buffer.from('orderId,sku\r\nA,S1\r\nB,S2\r\n'), 'o.csv');
+    expect(many.status).toBe(413);
+    expect(many.body.error.code).toBe('TOO_MANY_GROUPS');
+  });
+
+  it('refuses contiguous: false as INVALID_PLAN, saying what to do, and writes nothing', async () => {
     const written: Record<string, unknown>[] = [];
     for (const route of ['import', 'validate']) {
       const response = await request(app({ bindings: { order: { adapter: ORDERS, ctx: undefined } } }, written))
         .post(`/import/order/${route}`)
-        .field('plan', JSON.stringify(grouped))
+        .field('plan', JSON.stringify({ ...grouped, group: { ...grouped.group, contiguous: false } }))
         .attach('file', Buffer.from('orderId,sku\r\nA,S1\r\nA,S2\r\n'), 'orders.csv');
       expect(response.status).toBe(400);
       expect(response.body.error).toEqual({

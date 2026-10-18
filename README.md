@@ -137,13 +137,18 @@ result.warnings;
 ```
 
 Rows of a group that disagree on a parent field keep the first row's value and raise a
-**warning**: the record is still imported. Grouping works in `applyMapping`. The streaming
-runner in `/node` does not group yet, and refuses a grouped plan instead of ignoring it.
+**warning**: the record is still imported. Grouping works in `applyMapping` and in the
+streaming runner in `/node`, which gives the same records: a group that straddles a batch is
+carried into the next one and written whole. The runner groups contiguous rows only (sort the
+sheet by the key columns); `contiguous: false` works in `applyMapping` and is refused by the
+runner, since it would hold every group to the end of the file.
 
 Grouping is bounded: a group of more than 10,000 rows, more than 200,000 groups, or (for
 contiguous groups) more than 8 MiB of group keys stops the import with an `ImportFailure`
-(`GROUP_TOO_LARGE` or `TOO_MANY_GROUPS`). Raise them with
-`applyMapping(rows, plan, adapter, ctx, { groupLimits: { maxGroupRows: 50_000 } })`.
+(`GROUP_TOO_LARGE` or `TOO_MANY_GROUPS`), as does a key that comes back after its rows ended
+(`GROUP_NOT_CONTIGUOUS`). Raise a limit with
+`applyMapping(rows, plan, adapter, ctx, { groupLimits: { maxGroupRows: 50_000 } })`, or with the
+server's `limits`. Over HTTP these answer 413 and 422.
 
 ## Dates are never guessed
 
@@ -238,10 +243,12 @@ createImportRouter(express.Router(), {
 Four things to know before deploying it:
 
 1. **An import is not transactional.** A file that fails at row 30,000 has written 29,999
-   records. Run `/validate` first, and make your writer idempotent.
+   records. Run `/validate` first, and make your writer idempotent. A grouped import can stop
+   on a group limit or a key that comes back, after earlier groups were written; `/validate`
+   runs the same pipeline and finds that first.
 2. **Authentication, authorization and concurrency are yours.** The router checks none.
-3. **Every limit is on by default**: bytes, rows, columns, cell size, zip expansion, idle and
-   total time. See `DEFAULT_LIMITS`; pass `limits` to change one.
+3. **Every limit is on by default**: bytes, rows, columns, cell size, zip expansion, group
+   size and count, idle and total time. See `DEFAULT_LIMITS`; pass `limits` to change one.
 4. **A client must check `planVersions`.** `planForServer(plan, preview.planVersions)` returns
    the plan to send to that server, or the reason not to: a server from before plan v2 would
    ignore `group` and import one record per row.

@@ -13,6 +13,8 @@
  * was stays on the server, reachable through `cause` for the consumer's logger.
  */
 
+import type { ImportFailureCode } from 'sheet-to-schema';
+
 /**
  * Why a request failed, in a form a client can branch on.
  *
@@ -73,7 +75,8 @@ const STATUS: Record<ImportErrorCode, number> = {
  */
 export interface ImportErrorBody {
   error: {
-    code: ImportErrorCode;
+    /** An `ImportErrorCode`, or for a grouped import that stopped, an `ImportFailureCode`. */
+    code: ImportErrorCode | ImportFailureCode;
     message: string;
     details?: unknown;
   };

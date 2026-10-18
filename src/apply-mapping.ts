@@ -154,35 +154,47 @@ function mergeProblems(problems: ImportRowError[]): ImportRowError[] {
   return [...merged.values()];
 }
 
+/** What one call of a mapping session produced: finished records, and the rows behind them. @internal */
+export interface MappingBatch {
+  records: Record<string, unknown>[];
+  errors: ImportRowError[];
+  warnings: ImportRowError[];
+  /** Rows that held no values. */
+  skipped: number;
+  /** Rows of the records that failed. */
+  failed: number;
+  /** Rows of the records that were kept. */
+  rowsInImported: number;
+}
+
 /**
- * Turn rows into records. `plan` may be anything a plan arrived as: it is read, upgraded and
- * validated here, and an `error` among those stops the run before the first row is read.
+ * A run of `applyMapping` fed in batches, for the streaming runner: `push` takes rows in sheet
+ * order and returns the records they finished, `finish` returns the rest. An open group is
+ * carried from one `push` to the next and never handed out in part.
  *
- * Throws `ImportFailure` when a contiguous group's key comes back (`GROUP_NOT_CONTIGUOUS`), or
- * when grouping passes one of `options.groupLimits` (`GROUP_TOO_LARGE`, `TOO_MANY_GROUPS`).
+ * @internal Shared by `applyMapping` and `sheet-to-schema/node`'s `runImport`, so the two give
+ * the same records by construction. Not covered by semver.
  */
-export function applyMapping<TMeta, TCtx>(
-  rows: readonly (readonly unknown[])[],
-  plan: unknown,
+export interface MappingSession {
+  /**
+   * Map, group and build the rows of one batch. Every row is grouped before any record is
+   * built, so a contiguity or limit failure stops the batch before an adapter's finalize or
+   * validate runs.
+   */
+  push(rows: readonly (readonly unknown[])[], firstRowNumber: number): MappingBatch;
+  /** No more rows: the records still held. */
+  finish(): MappingBatch;
+  /** The sheet row the open group starts at, if one is open. */
+  openFrom(): number | undefined;
+}
+
+/** Start a mapping session over a plan `preparePlan` has already read and checked. @internal */
+export function startMapping<TMeta, TCtx>(
+  ready: NormalizedPlan,
   adapter: SchemaAdapter<TMeta, TCtx>,
   ctx: TCtx,
   options: ApplyMappingOptions = {},
-): ImportResult {
-  const prepared = preparePlan(plan, adapter);
-  if (!prepared.plan) {
-    return {
-      records: [],
-      errors: [],
-      warnings: [],
-      skipped: 0,
-      planProblems: prepared.problems,
-      rowsRead: 0,
-      imported: 0,
-      rowsInImported: 0,
-      failed: 0,
-    };
-  }
-  const ready = prepared.plan;
+): MappingSession {
   const group = ready.group;
 
   // A collected array is mapped by shape ref with no slot (§6), so it is asked for one slot to
@@ -283,12 +295,8 @@ export function applyMapping<TMeta, TCtx>(
     return { row, sawValue };
   };
 
-  const records: Record<string, unknown>[] = [];
-  const errors: ImportRowError[] = [];
-  const warnings: ImportRowError[] = [];
-  let skipped = 0;
-  let failed = 0;
-  let rowsInImported = 0;
+  /** What the current `push` or `finish` has produced. */
+  let out: MappingBatch = { records: [], errors: [], warnings: [], skipped: 0, failed: 0, rowsInImported: 0 };
 
   /**
    * Finalize and judge one record. In a grouped record a problem with the whole record carries
@@ -316,15 +324,15 @@ export function applyMapping<TMeta, TCtx>(
       ...cellErrors.map(ofCell),
       ...problems.map(problem => ofRecord({ row: rowNumbers[0], ref: problem.ref, code: problem.code, message: problem.message, raw: problem.raw })),
     ]);
-    warnings.push(...recordWarnings);
+    out.warnings.push(...recordWarnings);
     if (recordErrors.length) {
-      errors.push(...recordErrors);
+      out.errors.push(...recordErrors);
       // §5: if any row of a group fails, the whole record fails and every row of it counts.
-      failed += rowNumbers.length;
+      out.failed += rowNumbers.length;
       return;
     }
-    records.push(finished);
-    rowsInImported += rowNumbers.length;
+    out.records.push(finished);
+    out.rowsInImported += rowNumbers.length;
   };
 
   /** §5: one record from a group's rows. First row wins, later blanks are ignored, items append. */
@@ -382,32 +390,80 @@ export function applyMapping<TMeta, TCtx>(
     finish(record, rowNumbers, members.flatMap(member => member.errors), recordWarnings, unread);
   };
 
-  const firstRow = options.firstRowNumber ?? 2;
-  const mapped: MappedRow[] = [];
-  rows.forEach((cells, i) => {
-    const { row, sawValue } = mapRow(cells, firstRow + i);
-    if (sawValue) mapped.push(row);
-    else skipped++;
-  });
-
-  if (group) {
-    // Every row is grouped before any record is built, as before the accumulator existed: a
-    // contiguity failure stops the run before an adapter's finalize or validate has been called.
-    const accumulator = new GroupAccumulator<MappedRow>(group, resolveGroupLimits(options.groupLimits));
-    const groups = mapped.flatMap(row => accumulator.push(row));
-    groups.push(...accumulator.finish());
-    for (const members of groups) buildGroup(members);
-  } else for (const row of mapped) finish(row.parent, [row.rowNumber], row.errors, [], new Set(row.unread));
+  const accumulator = group ? new GroupAccumulator<MappedRow>(group, resolveGroupLimits(options.groupLimits)) : null;
+  const take = (): MappingBatch => {
+    const done = out;
+    out = { records: [], errors: [], warnings: [], skipped: 0, failed: 0, rowsInImported: 0 };
+    return done;
+  };
 
   return {
+    push(rows, firstRowNumber) {
+      const mapped: MappedRow[] = [];
+      rows.forEach((cells, i) => {
+        const { row, sawValue } = mapRow(cells, firstRowNumber + i);
+        if (sawValue) mapped.push(row);
+        else out.skipped++;
+      });
+      if (accumulator) {
+        // Every row is grouped before any record is built: a contiguity or limit failure stops
+        // the batch before an adapter's finalize or validate has been called.
+        const groups = mapped.flatMap(row => accumulator.push(row));
+        for (const members of groups) buildGroup(members);
+      } else {
+        for (const row of mapped) finish(row.parent, [row.rowNumber], row.errors, [], new Set(row.unread));
+      }
+      return take();
+    },
+    finish() {
+      for (const members of accumulator?.finish() ?? []) buildGroup(members);
+      return take();
+    },
+    openFrom: () => accumulator?.openFrom(),
+  };
+}
+
+/**
+ * Turn rows into records. `plan` may be anything a plan arrived as: it is read, upgraded and
+ * validated here, and an `error` among those stops the run before the first row is read.
+ *
+ * Throws `ImportFailure` when a contiguous group's key comes back (`GROUP_NOT_CONTIGUOUS`), or
+ * when grouping passes one of `options.groupLimits` (`GROUP_TOO_LARGE`, `TOO_MANY_GROUPS`).
+ */
+export function applyMapping<TMeta, TCtx>(
+  rows: readonly (readonly unknown[])[],
+  plan: unknown,
+  adapter: SchemaAdapter<TMeta, TCtx>,
+  ctx: TCtx,
+  options: ApplyMappingOptions = {},
+): ImportResult {
+  const prepared = preparePlan(plan, adapter);
+  if (!prepared.plan) {
+    return {
+      records: [],
+      errors: [],
+      warnings: [],
+      skipped: 0,
+      planProblems: prepared.problems,
+      rowsRead: 0,
+      imported: 0,
+      rowsInImported: 0,
+      failed: 0,
+    };
+  }
+  const session = startMapping(prepared.plan, adapter, ctx, options);
+  const all = session.push(rows, options.firstRowNumber ?? 2);
+  const last = session.finish();
+  const records = [...all.records, ...last.records];
+  return {
     records,
-    errors,
-    warnings,
-    skipped,
+    errors: [...all.errors, ...last.errors],
+    warnings: [...all.warnings, ...last.warnings],
+    skipped: all.skipped + last.skipped,
     planProblems: prepared.problems,
     rowsRead: rows.length,
     imported: records.length,
-    rowsInImported,
-    failed,
+    rowsInImported: all.rowsInImported + last.rowsInImported,
+    failed: all.failed + last.failed,
   };
 }

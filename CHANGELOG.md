@@ -16,12 +16,26 @@ This project follows [Semantic Versioning](https://semver.org/spec/v2.0.0.html).
   same for a workbook. `exceljs` stays an optional peer, loaded only when a workbook is read.
   The server and browser readers share their format sniffing, zip part selection, cell rules,
   limits and row checks, so they agree by construction.
+- `startMapping`, `MappingSession` and `MappingBatch` in the main entry, `@internal`: the
+  batch-fed form of `applyMapping` that `runImport` runs on.
 - `GroupLimits` and `DEFAULT_GROUP_LIMITS` in the main entry: `maxGroupRows` (10,000),
   `maxGroups` (200,000) and `maxGroupKeyBytes` (8 MiB), and an `applyMapping` option,
   `groupLimits`, to override them.
 
 ### Changed
 
+- `runImport` and the router group rows. A contiguous grouped plan, which 1.0 refused with
+  `INVALID_PLAN` (`PLAN_GROUP`), now imports, with the same records, errors, warnings and counts
+  as `applyMapping`; a group that straddles a batch is carried into the next and handed to
+  `onBatch` whole. Nobody could depend on the refusal usefully, so it is treated as a feature.
+  `contiguous: false` is still refused, and `GROUPING_NOT_STREAMED` now says so.
+- `ImportLimits` includes the group limits, with the same defaults, enforced while streaming.
+  A run past one, or with a closed key that comes back, throws the engine's `ImportFailure`;
+  the router answers it with 413 (`GROUP_TOO_LARGE`, `TOO_MANY_GROUPS`) or 422
+  (`GROUP_NOT_CONTIGUOUS`), carrying the key and rows. `ImportErrorBody.error.code` may now be
+  one of those three codes.
+- `BatchInfo.firstRow` is the first row a batch's records were built from: where a group
+  carried into the batch began, or the batch's first row as before.
 - `applyMapping` enforces the group limits: `maxGroupRows` and `maxGroups` in both grouping
   modes, `maxGroupKeyBytes` for contiguous groups. A grouped sheet past a default throws an
   `ImportFailure` (`GROUP_TOO_LARGE` or `TOO_MANY_GROUPS`) where 1.0 imported it; pass

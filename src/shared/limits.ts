@@ -10,7 +10,14 @@
  * in memory has already lost the thing it was checking.
  */
 
-export interface ImportLimits {
+import { DEFAULT_GROUP_LIMITS, type GroupLimits } from 'sheet-to-schema';
+
+/**
+ * Every bound, with the grouping limits (`maxGroupRows`, `maxGroups`, `maxGroupKeyBytes`) from
+ * the main entry's `GroupLimits`, which `runImport` enforces while streaming exactly as
+ * `applyMapping` does in memory.
+ */
+export interface ImportLimits extends GroupLimits {
   // ── The upload itself ──────────────────────────────────────────────────────
 
   /** Total bytes accepted from the request body. Counted as they arrive. */
@@ -87,6 +94,8 @@ export interface ImportLimits {
  * the backstop for a file that is mostly empty cells.
  */
 export const DEFAULT_LIMITS: ImportLimits = {
+  ...DEFAULT_GROUP_LIMITS,
+
   maxBytes: 10 * 1024 * 1024,
   maxFields: 16,
   maxFieldBytes: 1024 * 1024,
