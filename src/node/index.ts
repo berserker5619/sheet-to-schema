@@ -29,7 +29,7 @@ export { TEMPLATE_EXTENSION, TEMPLATE_MEDIA_TYPE, writeTemplate } from './write-
 export type { TemplateFormat, TemplateSheet, WriteTemplateOptions } from './write-template';
 
 // ─── Running an import ──────────────────────────────────────────────────────
-export { GROUPING_NOT_STREAMED, previewSheet, runImport } from './run-import';
+export { GROUPING_NOT_STREAMED, NON_CONTIGUOUS_NOT_STREAMED, previewSheet, runImport } from './run-import';
 export type { BatchInfo, ImportRunResult, OnBatch, PreviewSheetOptions, RunImportOptions, SheetPreview } from './run-import';
 
 // ─── Over HTTP ──────────────────────────────────────────────────────────────

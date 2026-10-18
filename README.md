@@ -137,11 +137,13 @@ result.warnings;
 ```
 
 Rows of a group that disagree on a parent field keep the first row's value and raise a
-**warning**: the record is still imported. Grouping works in `applyMapping` and in the
-streaming runner in `/node`, which gives the same records: a group that straddles a batch is
-carried into the next one and written whole. The runner groups contiguous rows only (sort the
-sheet by the key columns); `contiguous: false` works in `applyMapping` and is refused by the
-runner, since it would hold every group to the end of the file.
+**warning**: the record is still imported. Grouping works in `applyMapping`. On the server it
+is opt-in in 1.1: `runImport` and `createImportRouter` group when given `grouping: true`, and
+give the same records as `applyMapping` (a group that straddles a batch is carried into the next
+one and written whole). Without it a grouped plan is refused, as in 1.0. The runner groups
+contiguous rows only (sort the sheet by the key columns); `contiguous: false` works in
+`applyMapping` and is refused by the runner, since it would hold every group to the end of the
+file.
 
 Grouping is bounded: a group of more than 10,000 rows, more than 200,000 groups, or (for
 contiguous groups) more than 8 MiB of group keys stops the import with an `ImportFailure`
@@ -220,6 +222,8 @@ app.use(
   createImportRouter(express.Router(), {
     bindings: { order: { adapter, ctx: undefined, kind: 'json-schema' } },
     dateOrder: 'DMY',
+    // Opt-in in 1.1: import plans that group rows into one record (previews then say "group").
+    grouping: true,
     // Called once per batch, and awaited. It must be idempotent: a client will retry.
     onImport: async (records, { name }) => saveAll(name, records),
   }),
@@ -260,8 +264,8 @@ Four things to know before deploying it:
 4. **A client must check what the server reads.** `planForServer(plan, preview)` returns the
    plan to send to that server, or the reason not to: a server from before plan v2 would ignore
    `group` and import one record per row, and a 1.0 server reads plan v2 but refuses `group`.
-   A preview lists `planVersions` and, from 1.1, `features` (`["group"]`); a missing `features`
-   means the server cannot group. The 1.0 form, `planForServer(plan, preview.planVersions)`,
+   A preview lists `planVersions` and, from 1.1, `features` (`["group"]` on a router created
+   with `grouping: true`); a missing `features` means the server will not group. The 1.0 form, `planForServer(plan, preview.planVersions)`,
    still works and checks plan versions only.
 
 ## Problem codes

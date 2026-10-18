@@ -13,13 +13,15 @@
  *   every row fails is otherwise as large as the file;
  * - the plan is checked before a single row is read.
  *
- * **Grouping streams** (docs/1.1-spec.md, B). Rows go through the main entry's mapping session,
+ * **Grouping streams, when it is turned on** (`grouping: true`; docs/1.1-spec.md, B). Off, the
+ * default in 1.1, a plan with `group` is refused before a row is read, exactly as 1.0 refused it:
+ * Dynamic Entity 3.0 relies on that refusal. On, rows go through the main entry's mapping session,
  * the one `applyMapping` runs on, so a grouped file gives the same records here as in memory.
  * A group that straddles a batch boundary is carried into the next batch and handed to
  * `onBatch` whole. Peak memory is the batch, the open group and the closed keys, each bounded
  * (`batchSize`, `maxGroupRows`, `maxGroups` and `maxGroupKeyBytes`); past one, or when a closed
  * key comes back, the run stops with the engine's `ImportFailure`. Non-contiguous grouping
- * would hold every group to the end, so it is refused before a row is read.
+ * would hold every group to the end, so it is refused before a row is read either way.
  */
 
 import {
@@ -87,6 +89,11 @@ export interface RunImportOptions<TMeta = unknown, TCtx = unknown> {
   dateOrder?: DateOrder;
   /** Omit to validate without writing: the identical pipeline, every error, nothing stored. */
   onBatch?: OnBatch;
+  /**
+   * Import a plan with `group` (contiguous groups only). Default `false`: such a plan is refused
+   * with `INVALID_PLAN` carrying `PLAN_GROUP` and `GROUPING_NOT_STREAMED`, as in 1.0.
+   */
+  grouping?: boolean;
   limits?: Partial<ImportLimits>;
 }
 
@@ -128,12 +135,16 @@ export interface ImportRunResult {
   format?: SheetFormat;
 }
 
+/** What a server tells a client whose plan groups rows, when grouping is not turned on (1.0's refusal). */
+export const GROUPING_NOT_STREAMED =
+  'This server version does not group rows into records yet. The browser import does: import this file there, or remove "group" from the plan.';
+
 /**
- * What a server tells a client whose plan groups rows that are not together
+ * What a server with grouping on tells a client whose plan groups rows that are not together
  * (`group.contiguous: false`). Holding every group to the end of the file is not bounded by a
  * batch, so the streaming runner does not; the in-memory engine does.
  */
-export const GROUPING_NOT_STREAMED =
+export const NON_CONTIGUOUS_NOT_STREAMED =
   'This server groups rows only when each group\'s rows are together. Sort the sheet by the key columns and set "contiguous" to true, or import this file in the browser, which can gather them.';
 
 export async function runImport<TMeta, TCtx>(options: RunImportOptions<TMeta, TCtx>): Promise<ImportRunResult> {
@@ -163,12 +174,15 @@ export async function runImport<TMeta, TCtx>(options: RunImportOptions<TMeta, TC
     };
   }
 
-  if (prepared.plan.group && !prepared.plan.group.contiguous) {
-    // Refused, not ignored: a runner that ignored `contiguous: false` would fail at the first
-    // key that comes back, after writing everything before it.
+  if (prepared.plan.group && (!options.grouping || !prepared.plan.group.contiguous)) {
+    // Refused, not ignored: a runner that ignored `group` would import one record per row and
+    // report success (spec §4, "Talking to an older server"), and one that ignored
+    // `contiguous: false` would fail at the first key that comes back, after writing everything
+    // before it.
     destroySource(options.stream);
-    const problem: PlanProblem = { level: 'error', code: 'PLAN_GROUP', path: 'group', message: GROUPING_NOT_STREAMED };
-    throw new ImportError('INVALID_PLAN', GROUPING_NOT_STREAMED, { details: [...prepared.problems, problem] });
+    const message = options.grouping ? NON_CONTIGUOUS_NOT_STREAMED : GROUPING_NOT_STREAMED;
+    const problem: PlanProblem = { level: 'error', code: 'PLAN_GROUP', path: 'group', message };
+    throw new ImportError('INVALID_PLAN', message, { details: [...prepared.problems, problem] });
   }
 
   const sheet = await readSheet({ stream: options.stream, filename: options.filename, limits });

@@ -6,12 +6,16 @@ This project follows [Semantic Versioning](https://semver.org/spec/v2.0.0.html).
 
 ---
 
-## [1.1.0-rc.1]
+## [1.1.0-rc.2]
 
-The first release candidate of 1.1 (docs/1.1-spec.md): a browser file reader that matches the
-server's, grouping in the streaming runner, and formula results read as their typed values.
-Every change is an addition except the formula fix and the group limits now enforced by
-`applyMapping`, both listed below. Published to `next`; `latest` stays 1.0.0.
+The second release candidate of 1.1 (docs/1.1-spec.md): a browser file reader that matches the
+server's, grouping in the streaming runner (opt-in), and formula results read as their typed
+values. Every change is an addition except the formula fix and the group limits now enforced by
+`applyMapping`, both listed below. **Every 1.0 test passes unchanged.** Published to `next`;
+`latest` stays 1.0.0.
+
+Since rc.1: server-side grouping is opt-in (`grouping: true`). rc.1 grouped by default, and
+Dynamic Entity 3.0, which relies on the 1.0 refusal, failed against it.
 
 ### Added
 
@@ -21,8 +25,13 @@ Every change is an addition except the formula fix and the group limits now enfo
   same for a workbook. `exceljs` stays an optional peer, loaded only when a workbook is read.
   The server and browser readers share their format sniffing, zip part selection, cell rules,
   limits and row checks, so they agree by construction.
-- Preview responses carry `features` (`["group"]` from this release; `SERVER_FEATURES` in
-  `/node`). Older clients ignore it.
+- `grouping` option on `runImport` and `createImportRouter`: server-side grouping is opt-in.
+  With `grouping: true`, a contiguous grouped plan imports with the same records, errors,
+  warnings and counts as `applyMapping`, and a group that straddles a batch is carried into the
+  next and handed to `onBatch` whole. Without it (the default) a grouped plan is refused exactly
+  as in 1.0. `contiguous: false` is refused either way, with `NON_CONTIGUOUS_NOT_STREAMED`.
+- Preview responses carry `features` (`["group"]`, `SERVER_FEATURES` in `/node`) when the
+  router was created with `grouping: true`. Older clients ignore it.
 - `planForServer(plan, preview)`: given the preview (or `{ planVersions, features }`), it also
   refuses a grouped plan (`refused: ['group']`) for a server whose preview does not list
   `"group"`, which includes every 1.0 server. `planForServer(plan, planVersions)` is unchanged.
@@ -34,14 +43,9 @@ Every change is an addition except the formula fix and the group limits now enfo
 
 ### Changed
 
-- `runImport` and the router group rows. A contiguous grouped plan, which 1.0 refused with
-  `INVALID_PLAN` (`PLAN_GROUP`), now imports, with the same records, errors, warnings and counts
-  as `applyMapping`; a group that straddles a batch is carried into the next and handed to
-  `onBatch` whole. Nobody could depend on the refusal usefully, so it is treated as a feature;
-  the 1.0 tests that asserted the refusal were updated to assert the import. `contiguous: false`
-  is still refused, and `GROUPING_NOT_STREAMED` now says so.
-- `ImportLimits` includes the group limits, with the same defaults, enforced while streaming.
-  A run past one, or with a closed key that comes back, throws the engine's `ImportFailure`;
+- `ImportLimits` includes the group limits, with the same defaults, enforced while streaming
+  when grouping is on. A run past one, or with a closed key that comes back, throws the engine's
+  `ImportFailure`;
   the router answers it with 413 (`GROUP_TOO_LARGE`, `TOO_MANY_GROUPS`) or 422
   (`GROUP_NOT_CONTIGUOUS`), carrying the key and rows. These three codes can now appear in
   HTTP error bodies: `ImportErrorBody.error.code` may be one of them.
@@ -62,6 +66,14 @@ Every change is an addition except the formula fix and the group limits now enfo
   browser reader reads them the same way, including a cached `0` or `false`, which ExcelJS's
   `Workbook.xlsx.load` would drop. Both take the formulas out of the worksheet before parsing;
   an import never reads a formula itself.
+
+---
+
+## [1.1.0-rc.1]
+
+Superseded by rc.2. As rc.2, except that `runImport` and the router grouped rows by default:
+a grouped plan that 1.0 refused imported, every preview listed `features: ["group"]`, and the
+1.0 tests that asserted the refusal had been changed to assert the import.
 
 ---
 

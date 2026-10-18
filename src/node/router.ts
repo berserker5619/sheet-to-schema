@@ -142,6 +142,12 @@ export interface ImportRouterOptions<TRequest extends ImportRequest = ImportRequ
    */
   dateOrder?: DateOrder;
   /**
+   * Import and validate plans with `group` (contiguous groups), and say so on a preview
+   * (`features: ["group"]`). Default `false`: a grouped plan is refused as in 1.0, and previews
+   * carry no `features`. Off by default in 1.1 because Dynamic Entity 3.0 relies on the refusal.
+   */
+  grouping?: boolean;
+  /**
    * @internal Wire compatibility with Dynamic Entity.
    * The name of the path parameter: routes are `/:<param>/template` and so on, and a writer
    * reads it from `request.params`. Default `name`.
@@ -224,8 +230,9 @@ function applyTimeouts(request: ImportRequest, response: ImportResponse, limits:
 }
 
 /**
- * What this server can do beyond the plan versions it reads, sent on every preview
- * (`ImportPreviewResponse.features`). `"group"`: it imports a grouped plan.
+ * What a server can do beyond the plan versions it reads, sent on a preview
+ * (`ImportPreviewResponse.features`) when it is turned on. `"group"`: it imports a grouped plan,
+ * listed only by a router created with `grouping: true`.
  */
 export const SERVER_FEATURES: readonly string[] = Object.freeze(['group']);
 
@@ -351,7 +358,7 @@ export function createImportRouter<TRouter extends ImportRouter<TRequest>, TRequ
         ...binding.previewExtras?.(preview),
         // After the extras, so nothing a binding adds can restate what this server is.
         planVersions: [...PLAN_VERSIONS],
-        features: [...SERVER_FEATURES],
+        ...(options.grouping ? { features: [...SERVER_FEATURES] } : {}),
         engineVersion,
         adapter: stampOf(binding),
       };
@@ -402,6 +409,7 @@ export function createImportRouter<TRouter extends ImportRouter<TRequest>, TRequ
       adapter: binding.adapter,
       ctx: binding.ctx,
       dateOrder: options.dateOrder,
+      grouping: options.grouping,
       limits,
       ...(write ? { onBatch: (records, info) => options.onImport(records, { ...info, name, binding, request }) } : {}),
     });

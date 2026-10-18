@@ -183,7 +183,40 @@ try {
 } finally {
   server.close();
 }
-console.log('  peers: exceljs reads a workbook; busboy and express serve an upload through createImportRouter');
+// Grouping on the server is opt-in: a router created with grouping: true imports a grouped plan.
+const orders = jsonSchemaAdapter({
+  type: 'object',
+  properties: { orderId: { type: 'string' }, items: { type: 'array', items: { type: 'object', properties: { sku: { type: 'string' } } } } },
+});
+const grouped = [];
+const groupingApp = express();
+groupingApp.use('/import', createImportRouter(express.Router(), {
+  bindings: { orders: { adapter: orders, ctx: undefined } },
+  grouping: true,
+  onImport: records => { grouped.push(...records); },
+}));
+const groupingServer = groupingApp.listen(0);
+try {
+  const base = \`http://127.0.0.1:\${groupingServer.address().port}/import/orders\`;
+  const sheet = new Blob(['orderId,sku\\r\\nA,S1\\r\\nA,S2\\r\\nB,S3\\r\\n']);
+  const preview = new FormData();
+  preview.append('file', sheet, 'orders.csv');
+  const previewed = await (await fetch(\`\${base}/preview\`, { method: 'POST', body: preview })).json();
+  assert.deepEqual(previewed.features, ['group']);
+  const form = new FormData();
+  form.append('plan', JSON.stringify({ planVersion: 2, target: 'orders', entries: [{ ref: 'orderId', column: 0 }, { ref: 'items.sku', column: 1 }], group: { key: [0], collect: ['items'] } }));
+  form.append('file', sheet, 'orders.csv');
+  const response = await fetch(\`\${base}/import\`, { method: 'POST', body: form });
+  const body = await response.json();
+  assert.equal(response.status, 200, JSON.stringify(body));
+  assert.deepEqual(grouped, [
+    { orderId: 'A', items: [{ sku: 'S1' }, { sku: 'S2' }] },
+    { orderId: 'B', items: [{ sku: 'S3' }] },
+  ]);
+} finally {
+  groupingServer.close();
+}
+console.log('  peers: exceljs reads a workbook; busboy and express serve an upload through createImportRouter, and a grouped import with grouping: true');
 `,
   );
 

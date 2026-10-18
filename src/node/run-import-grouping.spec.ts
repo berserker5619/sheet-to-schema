@@ -102,6 +102,7 @@ async function streamed(source: string | Buffer, plan: unknown, adapter: SchemaA
   const records: Record<string, unknown>[] = [];
   const batches: { records: Record<string, unknown>[]; info: BatchInfo }[] = [];
   const result = await runImport({
+    grouping: true,
     stream: chunked(source, byteAtATime ? 1 : 64 * 1024),
     plan,
     adapter,
@@ -197,7 +198,7 @@ describe('what stops a grouped run', () => {
 
   /** The failure `runImport` throws, and the one `applyMapping` throws for the same rows. */
   async function bothFailures(text: string, limits: Record<string, number> = {}, onBatch?: (records: Record<string, unknown>[]) => void) {
-    const streamedFailure = await runImport({ stream: chunked(text), plan: ORDER_PLAN(), adapter: adapter(), ctx: undefined, limits: { batchSize: 1, ...limits }, onBatch }).catch(error => error);
+    const streamedFailure = await runImport({ grouping: true, stream: chunked(text), plan: ORDER_PLAN(), adapter: adapter(), ctx: undefined, limits: { batchSize: 1, ...limits }, onBatch }).catch(error => error);
     let inMemoryFailure: unknown;
     try {
       applyMapping(parseCsv(text).rows, ORDER_PLAN(), adapter(), undefined, { groupLimits: limits });
@@ -232,7 +233,7 @@ describe('what stops a grouped run', () => {
   });
 
   it.each(cases)('%s: a run without onBatch (what /validate runs) stops the same way, having written nothing', async (_name, text, limits, code) => {
-    const failure = await runImport({ stream: chunked(text), plan: ORDER_PLAN(), adapter: adapter(), ctx: undefined, limits: { batchSize: 1, ...limits } }).catch(error => error);
+    const failure = await runImport({ grouping: true, stream: chunked(text), plan: ORDER_PLAN(), adapter: adapter(), ctx: undefined, limits: { batchSize: 1, ...limits } }).catch(error => error);
     expect(failure).toMatchObject({ code });
   });
 
@@ -272,6 +273,7 @@ describe('memory while grouping is bounded by the batch and the open group', () 
     let batches = 0;
     // Validation off: the email column is deliberately wide, and what is measured is grouping.
     const result = await runImport({
+    grouping: true,
       stream: groupedCsv(),
       plan: ORDER_PLAN(),
       adapter: ordersAdapter({ validate: () => [] }) as SchemaAdapter<unknown, unknown>,
