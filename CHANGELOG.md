@@ -6,7 +6,12 @@ This project follows [Semantic Versioning](https://semver.org/spec/v2.0.0.html).
 
 ---
 
-## [Unreleased]
+## [1.1.0-rc.1]
+
+The first release candidate of 1.1 (docs/1.1-spec.md): a browser file reader that matches the
+server's, grouping in the streaming runner, and formula results read as their typed values.
+Every change is an addition except the formula fix and the group limits now enforced by
+`applyMapping`, both listed below. Published to `next`; `latest` stays 1.0.0.
 
 ### Added
 
