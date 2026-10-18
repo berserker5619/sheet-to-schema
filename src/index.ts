@@ -10,6 +10,7 @@ export type {
   MatchConfidence,
   NormalizedPlan,
   PlanProblem,
+  PlanProblemReason,
 } from './plan.types';
 export { PLAN_PROBLEM_CODES } from './problem-codes';
 export type { PlanProblemCode } from './problem-codes';
@@ -68,6 +69,21 @@ export type { ExampleJsonAdapterOptions, ExampleJsonMeta } from './example-json-
 // ─── CSV ────────────────────────────────────────────────────────────────────
 export { completeFirstLine, createCsvReader, decimalMarkFor, detectDelimiter, escapeFormula, padRow, parseCsv, toCsv } from './csv';
 export type { CsvDelimiter, CsvReader, CsvReaderOptions, SheetData, SheetGrid } from './csv';
+
+// ─── Reading a file ─────────────────────────────────────────────────────────
+// A CSV or TSV file read whole, with nothing that can reach exceljs (1.1.1), and what it, the
+// server's readers and /browser's refuse with: one class, which /node and /browser re-export.
+export { readCsvFile } from './read-csv-file';
+export type { CsvFile, CsvFileLimits, ReadCsvFileOptions, SheetFileInput } from './read-csv-file';
+export { ImportError } from './import-error';
+export type { ImportErrorBody, ImportErrorCode } from './import-error';
+// @internal: what /node and /browser read with, here so there is one copy of each.
+export { bytesOf, csvGrid } from './read-csv-file';
+export { detectFormat, MAGIC_BYTES } from './sheet-format';
+export type { SheetFormat } from './sheet-format';
+export { guardGrid, guardHeaders, guardRow } from './sheet-guards';
+export { DEFAULT_LIMITS, resolveLimits } from './limits';
+export type { ImportLimits } from './limits';
 
 // ─── The wire ───────────────────────────────────────────────────────────────
 export type { AdapterStamp, ImportCommitResponse, ImportErrorResponse, ImportPreviewResponse } from './wire.types';

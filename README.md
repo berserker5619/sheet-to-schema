@@ -14,7 +14,7 @@ one record per row, or per group of rows, reporting every cell it could not use.
 - **The same reader on both sides.** `sheet-to-schema/browser` reads a CSV, TSV or `.xlsx`
   file in a browser into exactly the rows the server reads from the same bytes.
 
-> **Status: stable (1.1.0).** It is the import engine of
+> **Status: stable (1.1.1).** It is the import engine of
 > [Dynamic Entity](https://github.com/berserker5619/Dynamic-Entity#readme) 3.0, extracted so it can be used without it.
 > Members marked `@internal` are not covered by semver and may change in any release.
 
@@ -29,7 +29,9 @@ npm install express   # for the ready-made router
 ```
 
 Node 20 or later for the main entry; the three packages above are optional peers, loaded the
-first time they are needed. Reading a CSV needs none of them.
+first time they are needed. Reading a CSV needs none of them, through the main entry's
+`readCsvFile`. **`sheet-to-schema/browser` needs `exceljs` installed for a bundled app to
+build**, even one that never reads a workbook: see the browser section.
 
 ## Quick start
 
@@ -174,7 +176,23 @@ For anything else, implement `SchemaAdapter`: `id`, `adapterVersion`, and
 its own cells (`coerce`), finish a record (`finalize`) and check one (`validate`). That is how
 Dynamic Entity's form configs run on this engine.
 
-## In a browser: `sheet-to-schema/browser`
+## In a browser
+
+**CSV only: `readCsvFile`, from the main entry.** It reads a CSV or TSV file exactly as
+`readSheetFile` below does, with nothing in its module graph that asks for `exceljs`, so an app
+that never installed it builds:
+
+```ts
+import { applyMapping, decimalMarkFor, readCsvFile } from 'sheet-to-schema';
+
+const sheet = await readCsvFile(file, { filename: file.name });
+const result = applyMapping(sheet.rows, plan, adapter, undefined, { decimal: decimalMarkFor(sheet.delimiter) });
+```
+
+The format is still decided by the bytes: an `.xlsx` (or any zip), a pre-2007 `.xls` and a
+UTF-16 file are refused with `UNSUPPORTED_FORMAT`, with the server's messages for the last two.
+
+**CSV and `.xlsx`: `sheet-to-schema/browser`.**
 
 ```ts
 import { applyMapping, decimalMarkFor } from 'sheet-to-schema';
@@ -192,9 +210,24 @@ messages. Pass `sheet.delimiter` to `decimalMarkFor`, as the server does, so a s
 reads `1,5` as 1.5 on both sides. `readXlsx` is the same for a caller that already knows the
 file is a workbook.
 
-- **A CSV needs nothing installed.** `exceljs` is loaded with `import()` the first time a
-  workbook is read, so a CSV-only app never downloads it. Without it, a workbook fails with
-  what to install.
+- **Install `exceljs` to build with it.** It is loaded with `import()` the first time a
+  workbook is read, so a CSV-only user never downloads it, but a bundler still resolves that
+  `import()` when it builds. Without `exceljs` installed, checked in October 2026 (Dynamic
+  Entity's 3.1 spec, Step 0):
+
+  | Bundler | Builds? | Reading a workbook |
+  | --- | --- | --- |
+  | Angular 21 `ng build` | No: `Could not resolve "exceljs"` | — |
+  | Angular 21 `ng serve` | Yes | `PEER_MISSING` |
+  | Vite 8 (build and dev) | Yes | `PEER_MISSING` |
+  | webpack 5 | No: `Can't resolve 'exceljs'` | — |
+  | Any of them with `exceljs` marked external | Yes | `PEER_MISSING` (from 1.1.1; the browser's `TypeError` is its `cause`) |
+
+  A CSV read through `/browser` works wherever the app builds. An app that reads only CSV and
+  does not install `exceljs` uses `readCsvFile`.
+- **A missing `exceljs` is `PEER_MISSING`** (an `ImportError`, from 1.1.1), with
+  `details.peer` and what to install. A workbook chunk that failed to download is not: the
+  browser's own error (a `TypeError`, or webpack's `ChunkLoadError`) passes through as it is.
 - **The limits are the server's**, with its defaults: `maxBytes`, `maxRows`, `maxColumns`,
   `maxCellLength` and `maxZipEntries`, through `limits`.
 - **A workbook's zip is checked by what it declares** (entry count, sizes, compression ratio)
@@ -288,15 +321,21 @@ Four things to know before deploying it:
 | `CELL_` | One cell could not be read. | `CELL_FORMAT`, `CELL_UNKNOWN_OPTION` |
 | `RECORD_` | The record built from a row is not valid, or needs a warning. | `RECORD_REQUIRED`, `RECORD_GROUP_CONFLICT` |
 
-`PLAN_PROBLEM_CODES`, `CELL_PROBLEM_CODES` and `RECORD_PROBLEM_CODES` list them all.
+`PLAN_PROBLEM_CODES`, `CELL_PROBLEM_CODES` and `RECORD_PROBLEM_CODES` list them all. A
+server's `PLAN_GROUP` refusal of a valid grouped plan also carries a `reason` (from 1.1.1):
+`grouping-disabled` (the router was created without `grouping: true`) or `non-contiguous`
+(`group.contiguous: false`, which the server never streams). Compare `reason`, never the
+message.
 
 A grouped import can also stop as a whole, with an `ImportFailure` (`IMPORT_FAILURE_CODES`).
 `applyMapping` and `runImport` throw it; over HTTP it is the error body's `code`. And the
-browser reader can refuse to read a workbook at all, with an `ImportError`:
+readers can refuse to read a file at all, with an `ImportError` (the main entry exports it from
+1.1.1, for `readCsvFile`):
 
 | Code | HTTP | Raised when |
 | --- | --- | --- |
 | `UNSUPPORTED_RUNTIME` | (browser only) | `sheet-to-schema/browser` is asked to read a workbook where there is no `DecompressionStream` with `deflate-raw` (see the browser section for versions). A CSV is not affected. |
+| `PEER_MISSING` | (answered as `INTERNAL`, 500) | An optional peer the call needs is not installed: `exceljs` for a workbook, `busboy` for an upload. `details.peer` names it. A server's client is told only `INTERNAL`. |
 | `GROUP_NOT_CONTIGUOUS` | 422 | A group's key comes back after its rows ended. `details` has the key and both rows. |
 | `GROUP_TOO_LARGE` | 413 | A group has more than `maxGroupRows` rows. |
 | `TOO_MANY_GROUPS` | 413 | More than `maxGroups` groups, or more than `maxGroupKeyBytes` of group keys. |

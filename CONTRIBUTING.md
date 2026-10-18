@@ -35,6 +35,9 @@ Before submitting a pull request, ensure all gates pass:
 - `npm run check:consumer` (packs and installs tarball in scratch app)
 - `npm run check:browser-runtime` (reads a CSV and a workbook through `/browser` on this Node;
   CI also runs it on Node 20.11 with `--expect-unsupported`)
+- `npm run check:browsers` (the built package in Chromium, Firefox and WebKit: `readCsvFile`
+  with `exceljs` not installed, and `/browser` with it external, stubbed, installed, and with its
+  chunk failing to download; needs `npx playwright install chromium firefox webkit` once)
 
 ## Working with Dynamic Entity
 

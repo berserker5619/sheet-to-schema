@@ -64,8 +64,10 @@ describe('sheet-to-schema/browser without exceljs', () => {
       'sheet-to-schema/browser needs the "exceljs" package to read .xlsx files, and it is not installed. ' +
         'It is an optional peer dependency: run `npm install exceljs`.',
     );
-    // Not a code: the file is fine, the app is missing a package.
-    expect((failure as { code?: string }).code).toBeUndefined();
+    // Its own code (1.1.1): the file is fine, the app is missing a package.
+    const { ImportError } = await import('./index');
+    expect(failure).toBeInstanceOf(ImportError);
+    expect(failure).toMatchObject({ code: 'PEER_MISSING', details: { peer: 'exceljs' } });
     expect(mockLoads).toBeGreaterThan(0);
   });
 });

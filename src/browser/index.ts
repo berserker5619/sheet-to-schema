@@ -11,6 +11,7 @@
 export { readSheetFile, readXlsx } from './read-sheet-file';
 export type { BrowserLimits, ReadSheetFileOptions, SheetFile, SheetFileInput } from './read-sheet-file';
 
-// What a refusal is. Match on `code`: `/node` bundles its own copy of the class.
+// What a refusal is: the main entry's class (1.1.1). Match on `code` all the same: a CommonJS
+// and an ESM copy of the package are two classes.
 export { ImportError } from '../shared/import-error';
 export type { ImportErrorCode } from '../shared/import-error';

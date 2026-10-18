@@ -78,4 +78,16 @@ export interface PlanProblem {
   path: string;
   /** For a person to read. May be reworded in any release. */
   message: string;
+  /**
+   * Which refusal it is, where one code covers several a client handles differently (1.1.1).
+   * Compare this, never `message`. Absent on every other problem.
+   */
+  reason?: PlanProblemReason;
 }
+
+/**
+ * The reasons a `PLAN_GROUP` problem can carry, when the plan is valid and the server will not
+ * run it: `grouping-disabled`, a server created without `grouping: true`, and
+ * `non-contiguous`, `group.contiguous: false`, which the server never streams.
+ */
+export type PlanProblemReason = 'grouping-disabled' | 'non-contiguous';

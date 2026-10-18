@@ -7,6 +7,7 @@
  * needs the real package.
  */
 import JSZip from 'jszip';
+import { ImportError, toErrorBody } from './errors';
 import { readSheet } from './read-sheet';
 import { chunked, CSV_TEXT, HEADERS } from './sheet.fixtures';
 
@@ -33,12 +34,18 @@ describe('reading a workbook without exceljs installed', () => {
     );
   });
 
-  it('does not call it a problem with the file', async () => {
+  it('does not call it a problem with the file: PEER_MISSING, naming the package (1.1.1)', async () => {
     // The file is fine. Reporting MALFORMED_FILE would send the user to fix a workbook that
     // has nothing wrong with it, when the server is what is missing something.
     const failure = await readSheet({ stream: await workbookBytes() }).catch((error: Error) => error);
-    expect((failure as { code?: string }).code).toBeUndefined();
-    expect((failure as Error).name).toBe('Error');
+    expect(failure).toBeInstanceOf(ImportError);
+    expect(failure).toMatchObject({ name: 'ImportError', code: 'PEER_MISSING', details: { peer: 'exceljs' } });
+    expect((failure as Error).cause).toMatchObject({ code: 'MODULE_NOT_FOUND' });
+  });
+
+  it('answers a client INTERNAL, as when it was a plain Error: what the server has installed is not theirs to know', async () => {
+    const failure = await readSheet({ stream: await workbookBytes() }).catch((error: Error) => error);
+    expect(toErrorBody(failure)).toEqual({ status: 500, body: { error: { code: 'INTERNAL', message: 'The import could not be completed.' } } });
   });
 
   it('still reads a CSV, which never needed it', async () => {

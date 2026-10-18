@@ -617,7 +617,7 @@ describe('a plan that groups rows', () => {
     expect(failure).toBeInstanceOf(ImportError);
     expect(failure).toMatchObject({ code: 'INVALID_PLAN', status: 400 });
     expect((failure as ImportError).message).toBe(GROUPING_NOT_STREAMED);
-    expect((failure as ImportError).details).toEqual([{ level: 'error', code: 'PLAN_GROUP', path: 'group', message: GROUPING_NOT_STREAMED }]);
+    expect((failure as ImportError).details).toEqual([{ level: 'error', code: 'PLAN_GROUP', path: 'group', message: GROUPING_NOT_STREAMED, reason: 'grouping-disabled' }]);
     expect(GROUPING_NOT_STREAMED).toContain('does not group rows into records yet');
     expect(GROUPING_NOT_STREAMED).toContain('browser import does');
   });
@@ -756,7 +756,7 @@ describe('grouping, opt-in (1.1)', () => {
     const failure = await runImport({ stream: watched(), plan: scattered, adapter: ORDERS, ctx: undefined, grouping: true }).catch((error: unknown) => error);
     expect(failure).toBeInstanceOf(ImportError);
     expect((failure as ImportError).message).toBe(NON_CONTIGUOUS_NOT_STREAMED);
-    expect((failure as ImportError).details).toEqual([{ level: 'error', code: 'PLAN_GROUP', path: 'group', message: NON_CONTIGUOUS_NOT_STREAMED }]);
+    expect((failure as ImportError).details).toEqual([{ level: 'error', code: 'PLAN_GROUP', path: 'group', message: NON_CONTIGUOUS_NOT_STREAMED, reason: 'non-contiguous' }]);
     expect(pulled).toBe(false);
   });
 });

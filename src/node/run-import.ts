@@ -181,7 +181,8 @@ export async function runImport<TMeta, TCtx>(options: RunImportOptions<TMeta, TC
     // before it.
     destroySource(options.stream);
     const message = options.grouping ? NON_CONTIGUOUS_NOT_STREAMED : GROUPING_NOT_STREAMED;
-    const problem: PlanProblem = { level: 'error', code: 'PLAN_GROUP', path: 'group', message };
+    const reason = options.grouping ? 'non-contiguous' : 'grouping-disabled';
+    const problem: PlanProblem = { level: 'error', code: 'PLAN_GROUP', path: 'group', message, reason };
     throw new ImportError('INVALID_PLAN', message, { details: [...prepared.problems, problem] });
   }
 

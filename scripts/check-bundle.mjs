@@ -11,12 +11,17 @@
  *   without it can still read a CSV. In the CommonJS build it is loaded with `require` (or
  *   esbuild's `__require`), and there is no `import()` at all: Jest's module sandbox cannot run
  *   one without --experimental-vm-modules. In the ESM build it is loaded with `import()`.
- * - `/node` carries no copy of the main entry.
+ * - `/node` carries no copy of the main entry: no class of its own named `ImportFailure` or
+ *   `ImportError`. Nor does `/browser`.
  * - `/browser`: the main entry by name, and `exceljs` only inside the function that reads a
  *   workbook (`require` in CommonJS, `import()` in ESM). No Node built-ins, no other peer, and
  *   no copy of the main entry.
  * - A CSV-only app bundled for a browser from `/browser` (esbuild, code splitting on) carries no
  *   ExcelJS in the code it loads up front: ExcelJS is a separate chunk, fetched on first workbook.
+ * - A CSV-only app bundled from the main entry's `readCsvFile` builds where `exceljs` cannot be
+ *   resolved at all, as in an app that never installed it (1.1.1): nothing in its module graph
+ *   asks for `exceljs` or reaches `/browser`. Angular's `ng build` and webpack fail on `/browser`
+ *   there (Dynamic Entity docs/3.1-spec.md, Step 0).
  * - No published typings import `express` or `@types/express`.
  *
  * `scripts/check-bundle-selftest.mjs` proves each rule by planting a violation in a copy of
@@ -33,7 +38,12 @@ import ts from 'typescript';
 const ROOT = process.cwd();
 const PEERS = ['exceljs', 'busboy', 'express'];
 const BUILTINS = new Set(builtinModules.flatMap(name => [name, `node:${name}`]));
-const isPeer = s => PEERS.some(peer => s === peer || s.startsWith(`${peer}/`));
+/** Classes only the main entry defines; `/node` and `/browser` import them by name. ImportError since 1.1.1. */
+const ENGINE_CLASSES = [
+  { name: 'ImportFailure', pattern: /class ImportFailure\b/ },
+  { name: 'ImportError', pattern: /class ImportError\b/ },
+];
+const isPeer =s => PEERS.some(peer => s === peer || s.startsWith(`${peer}/`));
 
 const FUNCTION_KINDS = new Set([
   ts.SyntaxKind.FunctionDeclaration,
@@ -112,8 +122,8 @@ export async function checkBundle(dist) {
         problems.push(`the /node entry (${name}) loads "${specifier}", which is neither Node, an optional peer, nor the main entry.`);
       }
     }
-    if (/class ImportFailure\b/.test(text)) {
-      problems.push(`the /node entry (${name}) carries its own copy of ImportFailure. Import the main entry as "sheet-to-schema".`);
+    for (const engine of ENGINE_CLASSES) {
+      if (engine.pattern.test(text)) problems.push(`the /node entry (${name}) carries its own copy of ${engine.name}. Import the main entry as "sheet-to-schema".`);
     }
     const summary = loads.map(l => (isPeer(l.specifier) ? `${l.specifier} via ${l.how}${l.lazy ? ', lazy' : ''}` : l.specifier));
     report.push(`${name}: ${[...new Set(summary)].sort().join(', ') || 'no imports'}`);
@@ -137,8 +147,8 @@ export async function checkBundle(dist) {
         problems.push(`the /browser entry (${name}) loads "${specifier}", which is neither exceljs nor the main entry.`);
       }
     }
-    if (/class ImportFailure\b/.test(text)) {
-      problems.push(`the /browser entry (${name}) carries its own copy of ImportFailure. Import the main entry as "sheet-to-schema".`);
+    for (const engine of ENGINE_CLASSES) {
+      if (engine.pattern.test(text)) problems.push(`the /browser entry (${name}) carries its own copy of ${engine.name}. Import the main entry as "sheet-to-schema".`);
     }
     const summary = loads.map(l => (l.specifier === 'exceljs' ? `exceljs via ${l.how}${l.lazy ? ', lazy' : ''}` : l.specifier));
     report.push(`${name}: ${[...new Set(summary)].sort().join(', ') || 'no imports'}`);
@@ -147,6 +157,7 @@ export async function checkBundle(dist) {
   if (existsSync(join(dist, 'browser/index.mjs')) && existsSync(join(dist, 'index.mjs'))) {
     report.push(await checkCsvOnlyBundle(dist, problems));
   }
+  if (existsSync(join(dist, 'index.mjs'))) report.push(await checkReadCsvFileBundle(dist, problems));
 
   const typings = [];
   const walk = dir => {
@@ -222,6 +233,49 @@ async function checkCsvOnlyBundle(dist, problems) {
       problems.push('a CSV-only browser app bundled from /browser has no ExcelJS chunk at all, so this check proves nothing: the workbook path is not reachable.');
     }
     return `CSV-only browser bundle: ${((start?.bytes ?? 0) / 1024).toFixed(1)} KB up front, ExcelJS in a lazy chunk`;
+  } finally {
+    rmSync(work, { recursive: true, force: true });
+  }
+}
+
+/**
+ * Bundle a CSV-only browser app from the main entry's `readCsvFile` with `exceljs` made
+ * unresolvable, as it is in an app that never installed it. The build must succeed: anything in
+ * its module graph that asks for `exceljs`, `/browser` included, fails it.
+ */
+async function checkReadCsvFileBundle(dist, problems) {
+  const work = mkdtempSync(join(tmpdir(), 's2s-csv-main-bundle-'));
+  const notInstalled = {
+    name: 'exceljs-not-installed',
+    setup(build) {
+      build.onResolve({ filter: /^exceljs(?:\/|$)/ }, args => ({ errors: [{ text: `Could not resolve "${args.path}" (exceljs is not installed)` }] }));
+    },
+  };
+  try {
+    const entry = join(work, 'app.mjs');
+    writeFileSync(entry, "import { readCsvFile } from 'sheet-to-schema';\nexport const read = file => readCsvFile(file, { filename: file.name });\n");
+    let result;
+    try {
+      result = await esbuild.build({
+        entryPoints: [entry],
+        bundle: true,
+        splitting: true,
+        format: 'esm',
+        platform: 'browser',
+        outdir: join(work, 'out'),
+        write: false,
+        metafile: true,
+        logLevel: 'silent',
+        plugins: [notInstalled],
+        alias: { 'sheet-to-schema': join(dist, 'index.mjs') },
+      });
+    } catch (error) {
+      const why = (error.errors ?? []).map(e => e.text).join('; ') || error.message;
+      problems.push(`a CSV-only app bundled from the main entry's readCsvFile does not build without exceljs: ${why}`);
+      return 'readCsvFile bundle without exceljs: failed';
+    }
+    const bytes = Object.values(result.metafile.outputs).reduce((sum, output) => sum + output.bytes, 0);
+    return `readCsvFile bundle without exceljs: ${(bytes / 1024).toFixed(1)} KB, ${Object.keys(result.metafile.outputs).length} file(s)`;
   } finally {
     rmSync(work, { recursive: true, force: true });
   }

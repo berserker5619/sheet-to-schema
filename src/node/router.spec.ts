@@ -742,7 +742,7 @@ describe('a plan that groups rows, over HTTP', () => {
       expect(response.body.error).toEqual({
         code: 'INVALID_PLAN',
         message: GROUPING_NOT_STREAMED,
-        details: [{ level: 'error', code: 'PLAN_GROUP', path: 'group', message: GROUPING_NOT_STREAMED }],
+        details: [{ level: 'error', code: 'PLAN_GROUP', path: 'group', message: GROUPING_NOT_STREAMED, reason: 'grouping-disabled' }],
       });
     }
     expect(written).toEqual([]);
@@ -1015,7 +1015,7 @@ describe('grouping, opt-in (1.1)', () => {
       expect(response.body.error).toEqual({
         code: 'INVALID_PLAN',
         message: NON_CONTIGUOUS_NOT_STREAMED,
-        details: [{ level: 'error', code: 'PLAN_GROUP', path: 'group', message: NON_CONTIGUOUS_NOT_STREAMED }],
+        details: [{ level: 'error', code: 'PLAN_GROUP', path: 'group', message: NON_CONTIGUOUS_NOT_STREAMED, reason: 'non-contiguous' }],
       });
     }
     expect(written).toEqual([]);

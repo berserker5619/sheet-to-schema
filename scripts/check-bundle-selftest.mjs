@@ -31,10 +31,14 @@ const PLANTS = [
   ['/browser requires exceljs at module scope (CommonJS)', prepend('browser/index.js', 'require("exceljs");\n'), /\/browser entry \(browser\/index\.js\) loads "exceljs" at module scope/],
   ['/browser imports a Node built-in', prepend('browser/index.mjs', 'import "node:fs";\n'), /\/browser entry \(browser\/index\.mjs\) loads the Node built-in "node:fs"/],
   ['/browser loads another package', prepend('browser/index.mjs', 'import "busboy";\n'), /\/browser entry \(browser\/index\.mjs\) loads "busboy", which is neither exceljs nor the main entry/],
+  ['/node carries a copy of ImportError', append('node/index.js', '\nclass ImportError extends Error {}\n'), /\/node entry \(node\/index\.js\) carries its own copy of ImportError/],
+  ['/browser carries a copy of ImportError', append('browser/index.mjs', '\nclass ImportError extends Error {}\n'), /\/browser entry \(browser\/index\.mjs\) carries its own copy of ImportError/],
   ['/browser carries a copy of the engine', append('browser/index.mjs', '\nclass ImportFailure {}\n'), /\/browser entry \(browser\/index\.mjs\) carries its own copy of ImportFailure/],
   ['a CSV-only app downloads ExcelJS up front', prepend('browser/index.mjs', 'import "exceljs";\n'), /CSV-only browser app bundled from \/browser carries ExcelJS in the code it loads up front/],
   ['a CSV-only app cannot bundle for a browser', prepend('browser/index.mjs', 'import "node:fs";\n'), /CSV-only browser app does not bundle from \/browser/],
   ['the workbook path is not reachable, so the CSV check would prove nothing', replace('browser/index.mjs', "import('exceljs')", 'Promise.resolve({})'), /has no ExcelJS chunk at all/],
+  ['readCsvFile reaches exceljs', append('index.mjs', "\nexport const planted = () => import('exceljs');\n"), /CSV-only app bundled from the main entry's readCsvFile does not build without exceljs/],
+  ['readCsvFile reaches /browser', append('index.mjs', "\nexport * from './browser/index.mjs';\n"), /CSV-only app bundled from the main entry's readCsvFile does not build without exceljs/],
   ['published typings refer to express', append('browser/index.d.ts', '\nimport type { Router } from "express";\n'), /browser[\\/]index\.d\.ts refers to express types/],
 ];
 

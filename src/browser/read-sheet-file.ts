@@ -5,8 +5,8 @@
  * pass. Everything that decides *what* the grid is comes from the same code the server runs:
  *
  * - the format, from the first bytes (`shared/sheet-format.ts`), never from the name;
- * - CSV: the main entry's reader and delimiter detection, fed the whole text at once, decoded
- *   the server's way (UTF-8, not fatal, byte-order mark dropped);
+ * - CSV: the main entry's `csvGrid`, which its `readCsvFile` also runs: the main entry's reader
+ *   and delimiter detection, fed the whole text at once, decoded the server's way;
  * - `.xlsx`: the same parts picked from the archive and repacked the same way
  *   (`shared/zip.ts`), then each cell through the same rules (`shared/xlsx-cells.ts`);
  * - the limits, their defaults, the row checks and the error codes and messages
@@ -23,11 +23,11 @@
  *   empty, a hyperlink cell stays its text), and a part never parsed cannot be hostile;
  */
 import type ExcelJSModule from 'exceljs';
-import { cellText, completeFirstLine, createCsvReader, detectDelimiter, type CsvDelimiter, type SheetGrid } from 'sheet-to-schema';
+import { bytesOf, csvGrid, type CsvDelimiter, type SheetFileInput, type SheetGrid } from 'sheet-to-schema';
 import { ImportError } from '../shared/import-error';
 import { resolveLimits, type ImportLimits } from '../shared/limits';
 import { loadPeer } from '../shared/optional';
-import { guardHeaders, guardRow } from '../shared/sheet-guards';
+import { guardGrid } from '../shared/sheet-guards';
 import { detectFormat, MAGIC_BYTES } from '../shared/sheet-format';
 import { rowCells } from '../shared/xlsx-cells';
 import { filterFormulas } from '../shared/formula-filter';
@@ -53,8 +53,7 @@ export interface SheetFile extends SheetGrid {
   delimiter?: CsvDelimiter;
 }
 
-/** What a file can arrive as: a `File` or other `Blob`, or its bytes. */
-export type SheetFileInput = Blob | ArrayBuffer | Uint8Array;
+export type { SheetFileInput } from 'sheet-to-schema';
 
 type ExcelJS = typeof ExcelJSModule;
 
@@ -70,15 +69,15 @@ const loadExcel = (): Promise<ExcelJS> =>
  * @throws ImportError `TOO_LARGE`, `SHEET_TOO_LARGE`, `UNSUPPORTED_FORMAT`, `MALFORMED_FILE`,
  *   `ARCHIVE_REFUSED`, as the server would; and for a workbook, `UNSUPPORTED_RUNTIME` where the
  *   runtime has no `DecompressionStream` with `deflate-raw` (before Node 20.12, Chrome or Edge
- *   103, Firefox 113, Safari 16.4). A workbook read without `exceljs` installed throws a
- *   plain `Error` saying what to install.
+ *   103, Firefox 113, Safari 16.4). A workbook read without `exceljs` installed throws
+ *   `PEER_MISSING`, saying what to install.
  */
 export async function readSheetFile(input: SheetFileInput, options: ReadSheetFileOptions = {}): Promise<SheetFile> {
   const limits = resolveLimits(options.limits);
-  const bytes = await bytesOf(input, limits.maxBytes);
+  const bytes = await bytesOf(input, limits.maxBytes, 'readSheetFile');
   const format = detectFormat(bytes.subarray(0, MAGIC_BYTES));
   if (format === 'xlsx') return { format, ...(await xlsxGrid(bytes, limits)) };
-  return csvGrid(bytes, limits, /\.tsv$/i.test(options.filename ?? '') ? '\t' : undefined);
+  return csvGrid(bytes, limits, options.filename);
 }
 
 /**
@@ -89,80 +88,11 @@ export async function readSheetFile(input: SheetFileInput, options: ReadSheetFil
  */
 export async function readXlsx(input: SheetFileInput, options: Omit<ReadSheetFileOptions, 'filename'> = {}): Promise<SheetGrid> {
   const limits = resolveLimits(options.limits);
-  const bytes = await bytesOf(input, limits.maxBytes);
+  const bytes = await bytesOf(input, limits.maxBytes, 'readSheetFile');
   if (detectFormat(bytes.subarray(0, MAGIC_BYTES)) !== 'xlsx') {
     throw new ImportError('UNSUPPORTED_FORMAT', 'This is not an .xlsx workbook. Read a CSV with readSheetFile.');
   }
   return xlsxGrid(bytes, limits);
-}
-
-// ─── Bytes ────────────────────────────────────────────────────────────────────────────────
-
-const tooLarge = (maxBytes: number): never => {
-  throw new ImportError('TOO_LARGE', `The file is larger than the ${maxBytes} byte limit.`);
-};
-
-/**
- * The input's bytes, refusing past `maxBytes` before reading a `Blob` at all.
- *
- * Told apart by shape, not `instanceof`: a typed array or a `Blob` from another realm (an
- * iframe, a test environment) fails `instanceof` and is still one.
- */
-async function bytesOf(input: SheetFileInput, maxBytes: number): Promise<Uint8Array> {
-  if (ArrayBuffer.isView(input)) {
-    if (input.byteLength > maxBytes) tooLarge(maxBytes);
-    return new Uint8Array(input.buffer, input.byteOffset, input.byteLength);
-  }
-  if (Object.prototype.toString.call(input) === '[object ArrayBuffer]') {
-    const buffer = input as ArrayBuffer;
-    if (buffer.byteLength > maxBytes) tooLarge(maxBytes);
-    return new Uint8Array(buffer);
-  }
-  const blob = input as Blob;
-  if (blob !== null && typeof blob === 'object' && typeof blob.size === 'number' && typeof blob.slice === 'function') {
-    if (blob.size > maxBytes) tooLarge(maxBytes);
-    return new Uint8Array(await blobBuffer(blob));
-  }
-  throw new TypeError('readSheetFile reads a Blob (such as a File), an ArrayBuffer or a Uint8Array.');
-}
-
-/** `Blob.arrayBuffer`, or `FileReader` where a browser or test environment lacks it. */
-function blobBuffer(blob: Blob): Promise<ArrayBuffer> {
-  if (typeof blob.arrayBuffer === 'function') return blob.arrayBuffer();
-  return new Promise((resolve, reject) => {
-    const reader = new FileReader();
-    reader.onload = () => resolve(reader.result as ArrayBuffer);
-    reader.onerror = () => reject(reader.error);
-    reader.readAsArrayBuffer(blob);
-  });
-}
-
-// ─── CSV ──────────────────────────────────────────────────────────────────────────────────
-
-/** The server's `csvRows`, given the whole file as its one chunk. */
-function csvGrid(bytes: Uint8Array, limits: ImportLimits, forced: CsvDelimiter | undefined): SheetFile {
-  // Not `fatal`, as on the server: one bad byte is one U+FFFD in one cell the importer can
-  // report on, not a reason to refuse the file.
-  const text = new TextDecoder('utf-8').decode(bytes);
-  const line = completeFirstLine(text);
-  if (line === null && text.length > limits.maxCellLength * limits.maxColumns + limits.maxColumns) {
-    throw new ImportError('SHEET_TOO_LARGE', 'The header row is longer than any row may be.');
-  }
-  const delimiter = forced ?? detectDelimiter(line ?? text);
-  const reader = createCsvReader({ delimiter });
-  const { headers, rows } = guardGrid([...reader.push(text), ...reader.end()], limits);
-  return { format: 'csv', headers, rows, delimiter };
-}
-
-/** Header row through `cellText`, then every data row through the server's checks, in order. */
-function guardGrid(raw: Iterable<unknown[]>, limits: ImportLimits): SheetGrid {
-  const iterator = raw[Symbol.iterator]();
-  const first = iterator.next();
-  const headers = first.done ? [] : first.value.map(cellText);
-  guardHeaders(headers, limits);
-  const rows: unknown[][] = [];
-  for (let next = iterator.next(); !next.done; next = iterator.next()) rows.push(guardRow(next.value, rows.length + 1, headers.length, limits));
-  return { headers, rows };
 }
 
 // ─── xlsx ─────────────────────────────────────────────────────────────────────────────────

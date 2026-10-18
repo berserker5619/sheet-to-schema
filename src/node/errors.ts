@@ -1,7 +1,7 @@
 /**
  * errors.ts — the server's side of `ImportError`: turning anything thrown into a response.
  *
- * The type and its codes are in `shared/import-error.ts`, which the browser reader shares.
+ * The type and its codes are the main entry's (`import-error.ts`), which the browser readers share.
  */
 import { ImportFailure, type ImportFailureCode } from 'sheet-to-schema';
 import { ImportError, type ImportErrorBody } from '../shared/import-error';
@@ -28,7 +28,9 @@ const FAILURE_STATUS: Record<ImportFailureCode, number> = {
  * the thing that answers the request.
  */
 export function toErrorBody(error: unknown): { status: number; body: ImportErrorBody } {
-  if (error instanceof ImportError) {
+  // A package the server lacks is the server's to fix, and which packages it has installed is
+  // not the client's to know: as in 1.1.0, when this was a plain `Error`, it answers `INTERNAL`.
+  if (error instanceof ImportError && error.code !== 'PEER_MISSING') {
     return {
       status: error.status,
       body: {

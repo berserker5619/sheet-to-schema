@@ -1,6 +1,6 @@
 {
   "name": "sheet-to-schema",
-  "version": "1.1.0",
+  "version": "1.1.1",
   "description": "Turn spreadsheet rows into records that fit a schema you already have. The main entry is browser-safe with no runtime dependencies; sheet-to-schema/node reads files and serves HTTP.",
   "main": "dist/index.js",
   "module": "dist/index.mjs",
@@ -40,7 +40,8 @@
     "check:consumer": "node scripts/verify-consumer.mjs",
     "regenerate:fixtures": "node test/fixtures/real-world/generate-fixtures.mjs",
     "regenerate:parity-fixtures": "node test/fixtures/parity/generate-parity-fixtures.mjs",
-    "check:browser-runtime": "node scripts/check-browser-runtime.mjs"
+    "check:browser-runtime": "node scripts/check-browser-runtime.mjs",
+    "check:browsers": "node scripts/check-browsers.mjs"
   },
   "peerDependencies": {
     "busboy": "^1.6.0",
@@ -74,6 +75,7 @@
     "jest": "^30.0.0",
     "jest-environment-jsdom": "^30.5.2",
     "jszip": "^3.10.2",
+    "playwright": "^1.64.1",
     "supertest": "^7.2.2",
     "ts-jest": "^29.4.14",
     "tsup": "^8.0.0",

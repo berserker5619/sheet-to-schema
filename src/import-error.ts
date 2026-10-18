@@ -1,0 +1,113 @@
+/**
+ * import-error.ts — one error type, a closed set of codes, and an envelope that says nothing else.
+ *
+ * Browser-safe and shared: the server's readers, `sheet-to-schema/browser`'s and the main
+ * entry's `readCsvFile` throw the same codes and messages for the same file. In the main entry
+ * since 1.1.1, which `/node` and `/browser` import by name, so all three export one class. Match
+ * on `code` all the same: a CommonJS and an ESM copy of the package are two classes. Turning
+ * one into a response is `/node`'s (`toErrorBody` in `node/errors.ts`).
+ *
+ * **Information disclosure is a threat, so the envelope is the guard.** A stack trace tells an
+ * attacker the library versions in use and the filesystem layout of the host; a parser's own
+ * message tells them which parser. So a response carries a machine-readable `code` and a
+ * message this package wrote, and nothing that came from below it. Whatever the real cause
+ * was stays on the server, reachable through `cause` for the consumer's logger.
+ */
+
+import type { ImportFailureCode } from './import-failure';
+
+/**
+ * Why a request failed, in a form a client can branch on.
+ *
+ * Closed on purpose: a client that has to match on message text is a client that breaks when
+ * the text improves, and the wire shape is shared with every client of the router.
+ */
+export type ImportErrorCode =
+  /** No file part in the multipart body. */
+  | 'NO_FILE'
+  /** More file parts than `limits.maxFiles`. */
+  | 'TOO_MANY_FILES'
+  /** The body exceeded `limits.maxBytes`, or a field exceeded its own bound. */
+  | 'TOO_LARGE'
+  /** The bytes are not a format this package reads. Decided by content, not by filename. */
+  | 'UNSUPPORTED_FORMAT'
+  /** The bytes claim a format and are not valid in it. */
+  | 'MALFORMED_FILE'
+  /** A zip that inflates out of proportion to its size, or has too many entries. */
+  | 'ARCHIVE_REFUSED'
+  /** Rows, columns or one cell past the configured bound. */
+  | 'SHEET_TOO_LARGE'
+  /**
+   * No adapter is registered under the requested name. Dynamic Entity's name for it, kept
+   * because it is on the wire: renaming a code breaks every client that branches on it.
+   */
+  | 'UNKNOWN_ENTITY'
+  /** The `plan` field is missing, is not JSON, or does not describe this schema. */
+  | 'INVALID_PLAN'
+  /** The request took longer than `limits.totalTimeoutMs`, or stalled past the idle bound. */
+  | 'TIMEOUT'
+  /** The consumer's `onImport` threw. Nothing about *why* crosses the wire. */
+  | 'IMPORT_FAILED'
+  /**
+   * The browser reader runs where a workbook cannot be read: no `DecompressionStream` with the
+   * `deflate-raw` format. Raised by `sheet-to-schema/browser` only, never by the server.
+   */
+  | 'UNSUPPORTED_RUNTIME'
+  /**
+   * An optional peer the call needs is not installed (`exceljs` for a workbook, `busboy` for an
+   * upload). `details.peer` names it. The file is fine; the app is missing a package. The router
+   * answers it as `INTERNAL`, so a client is never told what the server has installed.
+   */
+  | 'PEER_MISSING'
+  /** Anything else. Deliberately the least informative code there is. */
+  | 'INTERNAL';
+
+/** The HTTP status each code answers with. Kept here so a route never has to decide. */
+const STATUS: Record<ImportErrorCode, number> = {
+  NO_FILE: 400,
+  TOO_MANY_FILES: 400,
+  TOO_LARGE: 413,
+  UNSUPPORTED_FORMAT: 415,
+  MALFORMED_FILE: 400,
+  ARCHIVE_REFUSED: 400,
+  SHEET_TOO_LARGE: 413,
+  UNKNOWN_ENTITY: 404,
+  INVALID_PLAN: 400,
+  TIMEOUT: 408,
+  IMPORT_FAILED: 500,
+  // Not an HTTP answer: only the browser reader raises it. 501 if one ever has to be chosen.
+  UNSUPPORTED_RUNTIME: 501,
+  PEER_MISSING: 500,
+  INTERNAL: 500,
+};
+
+/**
+ * What a failing route sends.
+ *
+ * `details` is present only for `INVALID_PLAN`, and carries the plan's own problems. Those
+ * describe the client's own plan against a schema the client already has, so they disclose
+ * nothing the caller did not send.
+ */
+export interface ImportErrorBody {
+  error: {
+    /** An `ImportErrorCode`, or for a grouped import that stopped, an `ImportFailureCode`. */
+    code: ImportErrorCode | ImportFailureCode;
+    message: string;
+    details?: unknown;
+  };
+}
+
+export class ImportError extends Error {
+  readonly code: ImportErrorCode;
+  readonly status: number;
+  readonly details?: unknown;
+
+  constructor(code: ImportErrorCode, message: string, options: { cause?: unknown; details?: unknown } = {}) {
+    super(message);
+    this.name = 'ImportError';
+    this.code = code;
+    this.status = STATUS[code] ?? 500;
+    this.details = options.details;
+    if (options.cause !== undefined) (this as { cause?: unknown }).cause = options.cause;
+  }
+}

@@ -6,6 +6,58 @@ This project follows [Semantic Versioning](https://semver.org/spec/v2.0.0.html).
 
 ---
 
+## [1.1.1]
+
+What Dynamic Entity's 3.1 Step 0 check found about bundled apps without `exceljs` installed
+(its docs/3.1-spec.md). `sheet-to-schema/browser` does not build there under Angular's
+`ng build` or webpack, though it does under Vite and `ng serve`. And where an app did build, a
+workbook failed with the bundler's or the browser's own error, not "install exceljs". **Every
+1.1.0 test passes**, except where a test pinned that a missing peer was a plain `Error` with no
+code, and four `PLAN_GROUP` expectations that now include `reason`.
+
+### Added
+
+- `readCsvFile(input, { filename?, limits? })` in the main entry: the CSV half of
+  `readSheetFile`, for an app that reads no workbooks. It reads a CSV or TSV file (a `File`,
+  `Blob`, `ArrayBuffer` or `Uint8Array`) into the grid the server reads, with `delimiter`. The
+  format is decided by the bytes, and an `.xlsx`, `.xls` or UTF-16 file is refused with
+  `UNSUPPORTED_FORMAT`. Nothing in its module graph asks for `exceljs`, so an app without it
+  builds: `npm run check:bundle` bundles it with `exceljs` unresolvable, and a CSV-only Angular
+  21 app runs `ng build` without it installed.
+- `ImportError` and `ImportErrorCode` (and `ImportErrorBody`) in the main entry. `/node` and
+  `/browser` now re-export the main entry's class instead of each bundling a copy.
+- `ImportError` code `PEER_MISSING`, with `details.peer`, for an optional peer that is not
+  installed.
+- `PlanProblem.reason`: a server's `PLAN_GROUP` refusal of a valid grouped plan says which
+  refusal it is, `grouping-disabled` or `non-contiguous`, so a client need not match the
+  message. The code stays `PLAN_GROUP`. `PlanProblemReason` is the type.
+- `npm run check:browsers` (and a CI job): the built package in Chromium, Firefox and WebKit,
+  bundled the ways Step 0 found apps bundle it.
+- `@internal`, in the main entry, so `/node` and `/browser` share one copy:
+  - `bytesOf` and `csvGrid`;
+  - `detectFormat`, `MAGIC_BYTES` and `SheetFormat`;
+  - `guardHeaders`, `guardRow` and `guardGrid`;
+  - `DEFAULT_LIMITS`, `resolveLimits` and `ImportLimits`. Import these from `/node`, as before.
+
+### Changed
+
+- A missing `exceljs` (or `busboy`) is now `ImportError` `PEER_MISSING`, not a plain `Error`.
+  The message, the `cause` and the `instanceof Error` check are unchanged. Over HTTP it still
+  answers `INTERNAL` (500), as before: what a server has installed is not its client's to know.
+- In a bundled app, `PEER_MISSING` is also recognised from:
+  - Vite's stub for an unresolved optional peer;
+  - Chromium's, Firefox's and WebKit's errors for a bare `exceljs` specifier, as in an app that
+    marks it external.
+
+  It is recognised only where `exceljs` is the module that failed to resolve. A lazy chunk that
+  failed to download (a `TypeError` naming the chunk's URL, which Vite names `exceljs.min-…js`;
+  WebKit's "Importing a module script failed."; webpack's `ChunkLoadError`) passes through as it
+  is: the package is installed, and the network failed.
+- README: the claim that a CSV needs nothing installed is corrected. `/browser` needs `exceljs`
+  installed for a bundled app to build. A CSV-only app uses `readCsvFile`.
+
+---
+
 ## [1.1.0]
 
 A browser file reader that reads exactly what the server reads, grouping in the streaming
