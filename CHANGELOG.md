@@ -16,6 +16,11 @@ This project follows [Semantic Versioning](https://semver.org/spec/v2.0.0.html).
   same for a workbook. `exceljs` stays an optional peer, loaded only when a workbook is read.
   The server and browser readers share their format sniffing, zip part selection, cell rules,
   limits and row checks, so they agree by construction.
+- Preview responses carry `features` (`["group"]` from this release; `SERVER_FEATURES` in
+  `/node`). Older clients ignore it.
+- `planForServer(plan, preview)`: given the preview (or `{ planVersions, features }`), it also
+  refuses a grouped plan (`refused: ['group']`) for a server whose preview does not list
+  `"group"`, which includes every 1.0 server. `planForServer(plan, planVersions)` is unchanged.
 - `startMapping`, `MappingSession` and `MappingBatch` in the main entry, `@internal`: the
   batch-fed form of `applyMapping` that `runImport` runs on.
 - `GroupLimits` and `DEFAULT_GROUP_LIMITS` in the main entry: `maxGroupRows` (10,000),

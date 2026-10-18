@@ -36,7 +36,7 @@ export type { BatchInfo, ImportRunResult, OnBatch, PreviewSheetOptions, RunImpor
 // The upload reader on its own, for a server that wires its own routes on another framework.
 export { readPlanField, receiveUpload, safeFieldName } from './multipart';
 export type { Upload } from './multipart';
-export { createImportRouter, sendFailure, templateFilename, templateOf } from './router';
+export { createImportRouter, sendFailure, SERVER_FEATURES, templateFilename, templateOf } from './router';
 export type {
   BindingSource,
   ImportBinding,

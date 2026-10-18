@@ -1,7 +1,7 @@
 import express from 'express';
 import { connect } from 'node:net';
 import request from 'supertest';
-import { IMPORTER_VERSION, jsonSchemaAdapter, parseCsv } from 'sheet-to-schema';
+import { IMPORTER_VERSION, jsonSchemaAdapter, parseCsv, planForServer } from 'sheet-to-schema';
 import { ImportError } from './errors';
 import { safeFieldName } from './multipart';
 import { createImportRouter, sendFailure, templateFilename, templateOf, type ImportBinding, type ImportRouterOptions, type OnImport } from './router';
@@ -125,6 +125,17 @@ describe('POST /:name/preview', () => {
     expect(response.body.headers).toEqual(HEADERS);
     expect(response.body.rowCount).toBe(4);
     expect(response.body.sample[0][0]).toBe('Alice');
+  });
+
+  it('says it can group, so a client can tell it from a 1.0 server that reads plan v2 and refuses group', async () => {
+    const response = await request(app())
+      .post('/import/employee/preview')
+      .attach('file', Buffer.from(CSV_TEXT), 'people.csv');
+    expect(response.body.features).toEqual(['group']);
+    expect(response.body.planVersions).toEqual([1, 2]);
+    // And what it says is what planForServer reads.
+    const grouped = { planVersion: 2, target: 'employee', entries: [{ ref: 'personal.firstName', column: 0 }], group: { key: [0], collect: [] } };
+    expect(planForServer(grouped, response.body)).toEqual({ plan: grouped });
   });
 
   it('carries the engine version, so the client can notice the two halves have diverged', async () => {

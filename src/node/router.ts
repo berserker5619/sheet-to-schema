@@ -223,6 +223,12 @@ function applyTimeouts(request: ImportRequest, response: ImportResponse, limits:
   });
 }
 
+/**
+ * What this server can do beyond the plan versions it reads, sent on every preview
+ * (`ImportPreviewResponse.features`). `"group"`: it imports a grouped plan.
+ */
+export const SERVER_FEATURES: readonly string[] = Object.freeze(['group']);
+
 /** Answer a failed request, in the one shape every failure has. */
 export function sendFailure(response: ImportResponse, error: unknown): void {
   if (response.headersSent) {
@@ -345,6 +351,7 @@ export function createImportRouter<TRouter extends ImportRouter<TRequest>, TRequ
         ...binding.previewExtras?.(preview),
         // After the extras, so nothing a binding adds can restate what this server is.
         planVersions: [...PLAN_VERSIONS],
+        features: [...SERVER_FEATURES],
         engineVersion,
         adapter: stampOf(binding),
       };

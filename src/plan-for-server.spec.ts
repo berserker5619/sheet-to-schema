@@ -89,3 +89,36 @@ describe('planForServer', () => {
     expect(planForServer(future, [1]).plan).toBe(future);
   });
 });
+
+describe('planForServer(plan, preview): the server must also say it groups (1.1)', () => {
+  const grouped = { ...V2, group: { key: [0], collect: ['phones'] } };
+
+  it('sends a grouped plan to a server whose preview lists "group"', () => {
+    expect(planForServer(grouped, { planVersions: [1, 2], features: ['group'] }).plan).toBe(grouped);
+  });
+
+  it('refuses a grouped plan for a server whose preview lacks "group", or has no features at all (1.0)', () => {
+    expect(planForServer(grouped, { planVersions: [1, 2], features: [] })).toEqual({ refused: ['group'] });
+    expect(planForServer(grouped, { planVersions: [1, 2] })).toEqual({ refused: ['group'] });
+    // A group with no plan version is still a group the server would refuse.
+    expect(planForServer({ ...V1, group: { key: [0], collect: [] } }, { planVersions: [1, 2] })).toEqual({ refused: ['group'] });
+  });
+
+  it('does everything the planVersions form does for a plan without a group', () => {
+    for (const versions of [undefined, [1], [1, 2]] as const) {
+      for (const plan of [V2, V1, { ...V2, lists: {} }, null, { planVersion: 3, entries }]) {
+        const preview = versions === undefined ? {} : { planVersions: [...versions] };
+        expect(planForServer(plan, preview)).toEqual(planForServer(plan, versions === undefined ? undefined : [...versions]));
+      }
+    }
+  });
+
+  it('reports a server from before plan v2 by its versions first', () => {
+    expect(planForServer(grouped, {})).toEqual({ refused: ['group'] });
+    expect(planForServer({ ...grouped, lists: {} }, { features: ['group'] })).toEqual({ refused: ['lists', 'group'] });
+  });
+
+  it('leaves the 1.0 form exactly as it was: it never refuses for group on a v2 server', () => {
+    expect(planForServer(grouped, [1, 2])).toEqual({ plan: grouped });
+  });
+});

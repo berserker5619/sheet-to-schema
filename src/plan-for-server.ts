@@ -7,6 +7,9 @@
  * result reported as a success. A preview says which plan versions its server reads
  * (`planVersions`, and absent means `[1]`), and a client checks its plan against that before
  * it commits. That check is this file, so every client makes it the same way.
+ *
+ * A 1.0 server reads plan v2 but refuses `group`, so from 1.1 a preview also says what its
+ * server can do (`features`, absent means none), and the `(plan, preview)` form checks that too.
  */
 
 const isObject = (value: unknown): value is Record<string, unknown> => typeof value === 'object' && value !== null && !Array.isArray(value);
@@ -36,6 +39,14 @@ export type PlanForServer =
   /** Do not commit. The paths are what the server would ignore. */
   | { plan?: undefined; refused: string[] };
 
+/** The part of a preview `planForServer` reads. */
+export interface ServerCapabilities {
+  /** As the preview reported it. Absent is a server from before plan v2. */
+  planVersions?: readonly number[];
+  /** As the preview reported it. Absent is a server from before 1.1: no grouping. */
+  features?: readonly string[];
+}
+
 /**
  * The plan to send to a server that reads `planVersions`, or the reason not to send one.
  *
@@ -47,8 +58,31 @@ export type PlanForServer =
  *   A client MUST NOT commit it, and should say the server needs upgrading.
  *
  * @param planVersions as the preview reported it. `undefined` is a server from before plan v2.
+ *   This form checks plan versions only, exactly as in 1.0: it never refuses for `group`.
  */
-export function planForServer(plan: unknown, planVersions: readonly number[] | undefined): PlanForServer {
+export function planForServer(plan: unknown, planVersions: readonly number[] | undefined): PlanForServer;
+/**
+ * The plan to send to the server a preview came from, or the reason not to send one.
+ *
+ * Everything the `(plan, planVersions)` form does, and also: a plan with `group` is
+ * **refused** (`refused: ['group']`) unless `features` includes `"group"`. A missing `features`
+ * is a server from before 1.1, which refuses a grouped plan; a client should say the server
+ * needs upgrading.
+ *
+ * @param preview the preview response, or the part of it this reads.
+ */
+export function planForServer(plan: unknown, preview: ServerCapabilities): PlanForServer;
+export function planForServer(plan: unknown, server: readonly number[] | undefined | ServerCapabilities): PlanForServer {
+  if (server === undefined || Array.isArray(server)) return forVersions(plan, server as readonly number[] | undefined);
+  const { planVersions, features } = server as ServerCapabilities;
+  const checked = forVersions(plan, planVersions);
+  if (checked.refused) return checked;
+  if (isObject(plan) && plan['group'] !== undefined && !(features ?? []).includes('group')) return { refused: ['group'] };
+  return checked;
+}
+
+/** The 1.0 check: plan versions alone. */
+function forVersions(plan: unknown, planVersions: readonly number[] | undefined): PlanForServer {
   const reads = planVersions ?? [1];
   if (!isObject(plan) || plan['planVersion'] !== 2 || reads.includes(2)) return { plan };
 

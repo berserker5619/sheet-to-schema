@@ -16,7 +16,7 @@ export type { PlanProblemCode } from './problem-codes';
 export { readPlan } from './read-plan';
 export type { ReadPlanOptions, ReadPlanResult } from './read-plan';
 export { planForServer, v2OnlyFields } from './plan-for-server';
-export type { PlanForServer } from './plan-for-server';
+export type { PlanForServer, ServerCapabilities } from './plan-for-server';
 export { UNSAFE_PATH_KEYS, isUnsafePath } from './safe-path';
 export { CELL_PROBLEM_CODES, RECORD_PROBLEM_CODES } from './problem-codes';
 export type { CellProblemCode, RecordProblemCode, RowProblemCode } from './problem-codes';

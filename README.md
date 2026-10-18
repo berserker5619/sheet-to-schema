@@ -249,9 +249,12 @@ Four things to know before deploying it:
 2. **Authentication, authorization and concurrency are yours.** The router checks none.
 3. **Every limit is on by default**: bytes, rows, columns, cell size, zip expansion, group
    size and count, idle and total time. See `DEFAULT_LIMITS`; pass `limits` to change one.
-4. **A client must check `planVersions`.** `planForServer(plan, preview.planVersions)` returns
-   the plan to send to that server, or the reason not to: a server from before plan v2 would
-   ignore `group` and import one record per row.
+4. **A client must check what the server reads.** `planForServer(plan, preview)` returns the
+   plan to send to that server, or the reason not to: a server from before plan v2 would ignore
+   `group` and import one record per row, and a 1.0 server reads plan v2 but refuses `group`.
+   A preview lists `planVersions` and, from 1.1, `features` (`["group"]`); a missing `features`
+   means the server cannot group. The 1.0 form, `planForServer(plan, preview.planVersions)`,
+   still works and checks plan versions only.
 
 ## Problem codes
 

@@ -53,6 +53,13 @@ export interface ImportPreviewResponse {
    */
   planVersions?: number[];
   /**
+   * What this server can do beyond reading the plan versions it lists. From 1.1: `"group"`,
+   * a server that imports a grouped plan. Absent means none: a 1.0 server reads `planVersion: 2`
+   * but refuses `group`, so `planVersions` alone cannot say whether grouping works.
+   * `planForServer(plan, preview)` reads it.
+   */
+  features?: string[];
+  /**
    * The importer's version on the machine that produced this.
    *
    * The browser's engine and the server's are separately deployed and may differ. A client
