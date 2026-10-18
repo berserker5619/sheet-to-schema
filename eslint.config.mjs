@@ -114,7 +114,33 @@ export default tseslint.config(
               group: ['@dynamic-entity/*', 'ngx-dynamic-entity', 'ngx-dynamic-entity-builder'],
               message: 'sheet-to-schema must not depend on Dynamic Entity.',
             },
-            { group: ['../*'], message: 'Import the main entry as "sheet-to-schema", so /node carries no second copy of it.' },
+            {
+              group: ['../*', '!../shared', '!../shared/*'],
+              message: 'Import the main entry as "sheet-to-schema", so /node carries no second copy of it. ../shared is the exception: it is not the main entry.',
+            },
+          ],
+        },
+      ],
+    },
+  },
+
+  {
+    // What the server's readers and the browser reader share. Bundled into each of them, so it
+    // is held to the browser's rules, and reaches the main entry by name like /node does.
+    files: ['src/shared/**/*.ts'],
+    ignores: ['**/*.spec.ts', '**/*.fixtures.ts'],
+    rules: {
+      'no-restricted-imports': [
+        'error',
+        {
+          patterns: [
+            {
+              group: ['@dynamic-entity/*', 'ngx-dynamic-entity', 'ngx-dynamic-entity-builder'],
+              message: 'sheet-to-schema must not depend on Dynamic Entity.',
+            },
+            { group: ['../*'], message: 'Shared code imports the main entry as "sheet-to-schema", and never /node or /browser.' },
+            { group: ['node:*', 'fs', 'path', 'stream', 'zlib', 'crypto', 'http', 'https', 'buffer'], message: 'Shared code runs in a browser: no Node built-ins.' },
+            { group: ['exceljs', 'busboy', 'express'], message: 'Shared code loads no peer: the entry that needs one loads it.' },
           ],
         },
       ],

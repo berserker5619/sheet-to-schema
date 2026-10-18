@@ -12,6 +12,8 @@ module.exports = {
   coverageThreshold: {
     './src/*.ts': { statements: 95, branches: 90, functions: 100, lines: 95 },
     './src/node/**/*.ts': { statements: 90, branches: 80, functions: 100, lines: 90 },
+    // Shared by the server's readers and the browser reader, and written for this package.
+    './src/shared/**/*.ts': { statements: 95, branches: 90, functions: 100, lines: 95 },
   },
   testTimeout: 60_000,
   modulePathIgnorePatterns: ['<rootDir>/dist/'],
