@@ -6,7 +6,7 @@ This project follows [Semantic Versioning](https://semver.org/spec/v2.0.0.html).
 
 ---
 
-## [1.2.0-rc.1]
+## [1.2.0]
 
 What Dynamic Entity's 3.1 Step 0 check found about bundled apps without `exceljs` installed
 (its docs/3.1-spec.md). `sheet-to-schema/browser` does not build there under Angular's
@@ -14,7 +14,8 @@ What Dynamic Entity's 3.1 Step 0 check found about bundled apps without `exceljs
 workbook failed with the bundler's or the browser's own error, not "install exceljs". It is a
 minor release because it adds API. **Every 1.1.0 test passes**, with two exceptions: tests that
 pinned a missing peer as a plain `Error` with no code, and four `PLAN_GROUP` expectations that
-now include `reason`.
+now include `reason`. The code is identical to 1.2.0-rc.1, which Dynamic Entity's drift check
+passed on `next`; only the version and the docs changed.
 
 ### Added
 
