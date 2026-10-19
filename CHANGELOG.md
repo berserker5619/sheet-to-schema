@@ -6,6 +6,21 @@ This project follows [Semantic Versioning](https://semver.org/spec/v2.0.0.html).
 
 ---
 
+## [1.3.1]
+
+A fix on the 1.x line, which Dynamic Entity 3.x uses. Published under the `release-1.x` dist-tag;
+`latest` and `next` belong to 2.x.
+
+### Fixed
+
+- **`receiveUpload`, and so `createImportRouter`, enforce `limits.maxFieldNameBytes`.** busboy
+  applies its `fieldNameSize` to urlencoded bodies only and reports `nameTruncated: false` for
+  every multipart part, so any part name was accepted. A field or file part whose name is longer
+  is now refused with `TOO_LARGE` (413), as an over-long field value already was. Names of up to
+  200 bytes, the default, are accepted as before. Backported from 2.0.0-rc.1.
+
+---
+
 ## [1.3.0]
 
 Found by Dynamic Entity's 3.1 tests (B1, its docs/3.1-spec.md): in a grouped record, a

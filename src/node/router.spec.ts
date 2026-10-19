@@ -644,6 +644,37 @@ describe('multipart abuse', () => {
     expect(safeFieldName('x'.repeat(200))).toHaveLength(40);
   });
 
+  it('refuses a field name past maxFieldNameBytes, naming no more of it than safeFieldName keeps (1.3.1)', async () => {
+    const name = `n${'x'.repeat(299)}`;
+    const response = await request(app({ limits: { maxFieldNameBytes: 8 } }))
+      .post('/import/employee/import')
+      .field(name, 'x')
+      .attach('file', Buffer.from(CSV_TEXT), 'a.csv');
+
+    expect(response.status).toBe(413);
+    expect(response.body.error.code).toBe('TOO_LARGE');
+    expect(response.body.error.message).toBe(`The "${safeFieldName(name)}" field is too long.`);
+    expect(response.body.error.message).not.toContain(name);
+  });
+
+  it('refuses a file part whose name is past maxFieldNameBytes (1.3.1)', async () => {
+    const response = await request(app({ limits: { maxFieldNameBytes: 8 } }))
+      .post('/import/employee/import')
+      .field('plan', JSON.stringify(PLAN))
+      .attach('a-file-part-name-far-too-long', Buffer.from(CSV_TEXT), 'a.csv');
+
+    expect(response.status).toBe(413);
+    expect(response.body.error.code).toBe('TOO_LARGE');
+  });
+
+  it('takes names of exactly maxFieldNameBytes: "plan" and "file" are 4 bytes each (1.3.1)', async () => {
+    const response = await request(app({ limits: { maxFieldNameBytes: 4 } }))
+      .post('/import/employee/import')
+      .field('plan', JSON.stringify(PLAN))
+      .attach('file', Buffer.from(CSV_TEXT), 'a.csv');
+    expect(response.status).toBe(200);
+  });
+
   it('names an over-long field rather than failing to parse a truncated one', async () => {
     const response = await request(app({ limits: { maxFieldBytes: 8 } }))
       .post('/import/employee/import')

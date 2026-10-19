@@ -1,6 +1,6 @@
 {
   "name": "sheet-to-schema",
-  "version": "1.3.0",
+  "version": "1.3.1",
   "description": "Turn spreadsheet rows into records that fit a schema you already have. The main entry is browser-safe with no runtime dependencies; sheet-to-schema/node reads files and serves HTTP.",
   "main": "dist/index.js",
   "module": "dist/index.mjs",
