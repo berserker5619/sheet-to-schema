@@ -16,7 +16,7 @@ export default defineConfig({
   // `/node` and `/browser` import the main entry by the package's own name, and it stays an
   // import: bundling it in would give each a second copy of the engine. The peers are the
   // consumer's.
-  external: ['sheet-to-schema', 'exceljs', 'busboy', 'express'],
+  external: ['sheet-to-schema', 'exceljs', 'busboy'],
   // The CommonJS build loads the optional peers with `require`, still inside the function that
   // needs them. A real `import()` in CommonJS is what Jest's module sandbox cannot run without
   // --experimental-vm-modules, so every Jest suite requiring `/node` failed on its first

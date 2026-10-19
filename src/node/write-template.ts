@@ -19,7 +19,7 @@
  * for each, so any adapter's targets can be written.
  */
 
-import { escapeFormula, toCsv } from 'sheet-to-schema';
+import { DEFAULT_SLOTS, escapeFormula, toCsv, type SchemaAdapter } from 'sheet-to-schema';
 import type { Writable } from 'node:stream';
 import { ImportError } from './errors';
 import { resolveLimits, type ImportLimits } from './limits';
@@ -44,13 +44,38 @@ export type TemplateFormat = 'csv' | 'xlsx';
 export interface WriteTemplateOptions {
   sheet: TemplateSheet;
   format: TemplateFormat;
-  /** Written into as the file is produced; an HTTP response is the intended one. */
+  /** Written into as the file is produced: an HTTP response, or a file. */
   out: Writable;
   limits?: Partial<ImportLimits>;
 }
 
 /** The extension a written template should be offered under. */
 export const TEMPLATE_EXTENSION: Record<TemplateFormat, string> = { csv: 'csv', xlsx: 'xlsx' };
+
+/**
+ * The name a template is downloaded under. Built from the schema's own name, never from the
+ * request, and reduced to characters that cannot break out of a `Content-Disposition` header.
+ */
+export function templateFilename(name: string, format: TemplateFormat): string {
+  const safe = String(name).replace(/[^A-Za-z0-9._-]/g, '-').replace(/^[-.]+/, '').slice(0, 64);
+  return `${safe || 'import'}-template.${TEMPLATE_EXTENSION[format]}`;
+}
+
+/**
+ * The template an adapter's own targets make: every target, each array at the default slots.
+ * `fields` keeps only the targets with those shape refs; `undefined` keeps every one.
+ */
+export function templateOf(adapter: SchemaAdapter, lang: string, fields: string[] | undefined): TemplateSheet {
+  const arrays = adapter.targets({ slots: {}, lang }).arrays;
+  const slots = Object.fromEntries(arrays.map(array => [array.ref, DEFAULT_SLOTS]));
+  const chosen = fields && new Set(fields);
+  const targets = adapter.targets({ slots, lang }).targets.filter(target => !chosen || chosen.has(target.shapeRef));
+  return {
+    sheetName: adapter.id,
+    headers: targets.map(target => target.header),
+    notes: targets.map(target => [target.required ? 'Required' : '', target.format ?? ''].filter(Boolean).join('. ')),
+  };
+}
 
 /** The media type a written template should be served as. */
 export const TEMPLATE_MEDIA_TYPE: Record<TemplateFormat, string> = {
@@ -62,7 +87,7 @@ export const TEMPLATE_MEDIA_TYPE: Record<TemplateFormat, string> = {
  * Write a template into `out`.
  *
  * Resolves when the file is complete and the stream has been ended. A caller that owns the
- * stream for other reasons — an Express response, say — gets it back finished, which is what
+ * stream for other reasons — an HTTP response, say — gets it back finished, which is what
  * a download handler wants.
  */
 export async function writeTemplate(options: WriteTemplateOptions): Promise<void> {

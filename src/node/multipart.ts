@@ -158,9 +158,42 @@ export async function receiveUpload(request: IncomingMessage, limits: ImportLimi
     // never fire, which makes it protection that reads as real and is not; `complete` is false
     // exactly when the body stopped arriving before it ended.
     request.on('close', () => {
+      clearTimeout(idle);
       if (!request.complete) fail(new ImportError('TIMEOUT', 'The upload did not finish.'));
     });
     request.pipe(parser);
+
+    // `limits.idleTimeoutMs`. A client that promises a body and then sends a byte a minute holds
+    // a socket for as long as it likes, so a body that sends nothing for that long while it is
+    // being read is abandoned, and the connection closed: the reply a slowloris wants least.
+    //
+    // A timer of this function's own, reset by every chunk, and never `socket.setTimeout`: that
+    // sets it on a socket a keep-alive connection reuses, so it would quietly become the idle
+    // bound of every later request on that connection.
+    //
+    // **Paused is not stalled.** When the reader stops pulling (an `onBatch` writing slowly),
+    // backpressure pauses the request, and the client is then waiting on the server, not the
+    // other way round. The timer runs again from when the request is next read.
+    let idle: ReturnType<typeof setTimeout> | undefined;
+    const arm = (): void => {
+      clearTimeout(idle);
+      idle = setTimeout(stalled, limits.idleTimeoutMs);
+      // `unref` so a pending timer never holds a process open past its work.
+      idle.unref?.();
+    };
+    const stalled = (): void => {
+      if (request.readableEnded || request.destroyed) return;
+      if (request.isPaused()) {
+        arm();
+        return;
+      }
+      fail(new ImportError('TIMEOUT', 'The upload stalled.'));
+      // Without an error: one would be emitted on a request nobody else may be listening to.
+      request.destroy();
+    };
+    request.on('data', arm);
+    request.on('end', () => clearTimeout(idle));
+    if (!request.readableEnded) arm();
   });
 }
 

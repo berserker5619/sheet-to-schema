@@ -32,6 +32,15 @@ export function v2OnlyFields(plan: unknown): string[] {
   return found;
 }
 
+/**
+ * What a server can do beyond the plan versions it reads, as a preview reports it
+ * (`ImportPreviewResponse.features`), and the vocabulary `planForServer` reads. `"group"`: the
+ * server imports a grouped plan, which `runImport` does by default from 2.0. A preview route
+ * whose server groups sends `features: [...SERVER_FEATURES]`. In the main entry from 2.0, next to
+ * `planForServer`, because both sides of the conversation need the same words.
+ */
+export const SERVER_FEATURES: readonly string[] = Object.freeze(['group']);
+
 /** What `planForServer` decides. */
 export type PlanForServer =
   /** Send this. It is the plan as given, or the same plan in v1 form. */

@@ -1,3 +1,4 @@
+import { ImportFailure } from 'sheet-to-schema';
 import { ImportError, toErrorBody } from './errors';
 
 describe('ImportError', () => {
@@ -54,5 +55,32 @@ describe('toErrorBody', () => {
     const body = toErrorBody(new ImportError('MALFORMED_FILE', 'Not a readable sheet.')).body;
     expect(JSON.stringify(body)).not.toContain('at ');
     expect('stack' in body.error).toBe(false);
+  });
+});
+
+// Until 2.0 these were reached through the router; an app's own route calls toErrorBody directly.
+describe('toErrorBody for what a route meets', () => {
+  it("answers a missing peer INTERNAL: what the server has installed is not the client's to know", () => {
+    const missing = new ImportError('PEER_MISSING', 'sheet-to-schema/node needs the "exceljs" package.', { details: { peer: 'exceljs' } });
+    const { status, body } = toErrorBody(missing);
+    expect(status).toBe(500);
+    expect(body).toEqual({ error: { code: 'INTERNAL', message: 'The import could not be completed.' } });
+    expect(JSON.stringify(body)).not.toContain('exceljs');
+  });
+
+  it("answers a grouped import that stopped with its own code: 422 for the file's shape, 413 for a size", () => {
+    const details = { key: ['A'], rows: [2, 9] };
+    expect(toErrorBody(new ImportFailure('GROUP_NOT_CONTIGUOUS', 'Key A comes back.', details))).toEqual({
+      status: 422,
+      body: { error: { code: 'GROUP_NOT_CONTIGUOUS', message: 'Key A comes back.', details } },
+    });
+    expect(toErrorBody(new ImportFailure('GROUP_TOO_LARGE', 'Too many rows.')).status).toBe(413);
+    expect(toErrorBody(new ImportFailure('TOO_MANY_GROUPS', 'Too many groups.')).status).toBe(413);
+  });
+
+  it('answers 500 for an engine failure code it does not know, rather than no status', () => {
+    const unknown = new ImportFailure('GROUP_TOO_LARGE', 'x');
+    (unknown as { code: string }).code = 'SOMETHING_NEW';
+    expect(toErrorBody(unknown).status).toBe(500);
   });
 });

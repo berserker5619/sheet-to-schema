@@ -53,7 +53,7 @@ const DATA_DESCRIPTOR = 0x08074b50;
 /** How much is handed to the inflater at once. Bounds the push-back after a stream ends. */
 const SLICE = 64 * 1024;
 
-/** The largest size a non-zip64 header can express. */
+/** The largest size a non-zip64 header can hold. */
 const ZIP32_MAX = 0xffffffff;
 
 // ─── Reading ──────────────────────────────────────────────────────────────────────────────
@@ -414,7 +414,7 @@ export async function guardZip(
     }
 
     if (keep) {
-      // The rebuilt archive is written without zip64, so a size a 32-bit header cannot express
+      // The rebuilt archive is written without zip64, so a size a 32-bit header cannot hold
       // would be silently truncated. `maxUncompressedBytes` keeps this out of reach at its
       // default; it is a consumer-settable limit, so the ceiling is checked rather than assumed.
       if (read.data.length > ZIP32_MAX || read.inflated > ZIP32_MAX) {

@@ -199,7 +199,7 @@ async function* closing(
     // `finally` rather than `catch`, so an early `break` in the caller's loop closes it too.
     //
     // But **only when the stream did not finish**. On a clean read the source is already at
-    // its end, and destroying it anyway would be actively wrong under Express: the file part
+    // its end, and destroying it anyway would be actively wrong in an HTTP server: the file part
     // of a multipart body shares a socket with the response being written back, and tearing
     // that down after a successful import would abort the reply it was about to send.
     if (!drained) destroySource(source);

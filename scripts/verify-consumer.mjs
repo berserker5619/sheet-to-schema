@@ -7,12 +7,12 @@
  *   `/browser` reads a CSV from both and asks for exceljs only when given a workbook,
  *   `/node` reads a CSV from both CJS and ESM, and asking it for a workbook fails with the peer
  *   message.
- * - full: exceljs, busboy and express installed. `/node` reads a real workbook and serves an
- *   upload through `createImportRouter` over HTTP.
+ * - full: exceljs and busboy installed. `/node` reads a real workbook, and a plain `node:http`
+ *   server receives an upload with `receiveUpload` and imports it with `runImport`, flat and
+ *   grouped.
  * - jest: a CommonJS Jest project, with no Node flags, that requires `/node`, reads a workbook
  *   and receives an upload. A dynamic `import()` in the CommonJS build fails exactly here.
- * - types-express4, types-express5: the published typings compile, with `skipLibCheck` off,
- *   against each major of `@types/express`, used the way the README shows.
+ * - types: the published typings compile with `skipLibCheck` off, used the way the README shows.
  * Also: the packed manifest declares no runtime dependencies.
  */
 import { execFileSync } from 'node:child_process';
@@ -148,75 +148,73 @@ console.log('  ESM: main entry, /node and /browser load; CSV reads; a workbook w
     `
 import assert from 'node:assert/strict';
 import fs from 'node:fs';
-import express from 'express';
+import { createServer } from 'node:http';
 import { jsonSchemaAdapter } from 'sheet-to-schema';
-import { readSheet, createImportRouter } from 'sheet-to-schema/node';
+import { readPlanField, readSheet, receiveUpload, resolveLimits, runImport, toErrorBody } from 'sheet-to-schema/node';
 
 const bytes = fs.readFileSync('case1.xlsx');
 const sheet = await readSheet({ stream: (async function* () { yield bytes; })(), filename: 'case1.xlsx' });
 assert.equal(sheet.format, 'xlsx');
 assert.deepEqual(sheet.headers, ['Name', 'BirthDate', 'JoinDate']);
 
+/** An import route written from the functions, on plain node:http. */
+function serve(adapter, options = {}) {
+  const written = [];
+  const server = createServer(async (req, res) => {
+    try {
+      const upload = await receiveUpload(req, resolveLimits());
+      const plan = readPlanField(upload.fields);
+      const result = await runImport({ stream: upload.stream, filename: upload.filename, plan, adapter, ctx: undefined, ...options, onBatch: records => { written.push(...records); } });
+      res.writeHead(200, { 'Content-Type': 'application/json' }).end(JSON.stringify(result));
+    } catch (error) {
+      const { status, body } = toErrorBody(error);
+      res.writeHead(status, { 'Content-Type': 'application/json' }).end(JSON.stringify(body));
+    }
+  }).listen(0);
+  return { server, written, url: () => 'http://127.0.0.1:' + server.address().port + '/' };
+}
+
 const adapter = jsonSchemaAdapter({
   type: 'object',
   properties: { name: { type: 'string' }, birthDate: { type: 'string', format: 'date' } },
 });
-const written = [];
-const app = express();
-app.use('/import', createImportRouter(express.Router(), {
-  bindings: { people: { adapter, ctx: undefined } },
-  onImport: records => { written.push(...records); },
-}));
-const server = app.listen(0);
+const people = serve(adapter);
 try {
   const form = new FormData();
   form.append('plan', JSON.stringify({ target: 'people', entries: [{ ref: 'name', column: 0 }, { ref: 'birthDate', column: 1 }] }));
   form.append('file', new Blob([bytes]), 'case1.xlsx');
-  const response = await fetch(\`http://127.0.0.1:\${server.address().port}/import/people/import\`, { method: 'POST', body: form });
+  const response = await fetch(people.url(), { method: 'POST', body: form });
   const body = await response.json();
   assert.equal(response.status, 200, JSON.stringify(body));
   assert.equal(body.imported, 2);
-  assert.deepEqual(written, [
+  assert.deepEqual(people.written, [
     { name: 'Alice Mac', birthDate: '2026-05-15' },
     { name: 'Bob Mac', birthDate: '1985-10-26' },
   ]);
 } finally {
-  server.close();
+  people.server.close();
 }
-// Grouping on the server is opt-in: a router created with grouping: true imports a grouped plan.
+// A grouped plan, streamed by runImport.
 const orders = jsonSchemaAdapter({
   type: 'object',
   properties: { orderId: { type: 'string' }, items: { type: 'array', items: { type: 'object', properties: { sku: { type: 'string' } } } } },
 });
-const grouped = [];
-const groupingApp = express();
-groupingApp.use('/import', createImportRouter(express.Router(), {
-  bindings: { orders: { adapter: orders, ctx: undefined } },
-  grouping: true,
-  onImport: records => { grouped.push(...records); },
-}));
-const groupingServer = groupingApp.listen(0);
+const grouping = serve(orders, { grouping: true });
 try {
-  const base = \`http://127.0.0.1:\${groupingServer.address().port}/import/orders\`;
-  const sheet = new Blob(['orderId,sku\\r\\nA,S1\\r\\nA,S2\\r\\nB,S3\\r\\n']);
-  const preview = new FormData();
-  preview.append('file', sheet, 'orders.csv');
-  const previewed = await (await fetch(\`\${base}/preview\`, { method: 'POST', body: preview })).json();
-  assert.deepEqual(previewed.features, ['group']);
   const form = new FormData();
   form.append('plan', JSON.stringify({ planVersion: 2, target: 'orders', entries: [{ ref: 'orderId', column: 0 }, { ref: 'items.sku', column: 1 }], group: { key: [0], collect: ['items'] } }));
-  form.append('file', sheet, 'orders.csv');
-  const response = await fetch(\`\${base}/import\`, { method: 'POST', body: form });
+  form.append('file', new Blob(['orderId,sku\\r\\nA,S1\\r\\nA,S2\\r\\nB,S3\\r\\n']), 'orders.csv');
+  const response = await fetch(grouping.url(), { method: 'POST', body: form });
   const body = await response.json();
   assert.equal(response.status, 200, JSON.stringify(body));
-  assert.deepEqual(grouped, [
+  assert.deepEqual(grouping.written, [
     { orderId: 'A', items: [{ sku: 'S1' }, { sku: 'S2' }] },
     { orderId: 'B', items: [{ sku: 'S3' }] },
   ]);
 } finally {
-  groupingServer.close();
+  grouping.server.close();
 }
-console.log('  peers: exceljs reads a workbook; busboy and express serve an upload through createImportRouter, and a grouped import with grouping: true');
+console.log('  peers: exceljs reads a workbook; busboy receives an upload on node:http, imported flat and grouped by runImport');
 `,
   );
 
@@ -272,9 +270,9 @@ console.log('  browser bundle: built from the installed package, exceljs split o
     `
 const fs = require('node:fs');
 const path = require('node:path');
-const express = require('express');
+const { createServer } = require('node:http');
 const { jsonSchemaAdapter } = require('sheet-to-schema');
-const { readSheet, createImportRouter } = require('sheet-to-schema/node');
+const { readPlanField, readSheet, receiveUpload, resolveLimits, runImport } = require('sheet-to-schema/node');
 
 const bytes = fs.readFileSync(path.join(__dirname, 'case1.xlsx'));
 
@@ -284,23 +282,22 @@ test('reads a workbook', async () => {
   expect(sheet.headers).toEqual(['Name', 'BirthDate', 'JoinDate']);
 });
 
-test('receives an upload through createImportRouter', async () => {
+test('receives an upload with receiveUpload and imports it with runImport', async () => {
   const adapter = jsonSchemaAdapter({
     type: 'object',
     properties: { name: { type: 'string' }, birthDate: { type: 'string', format: 'date' } },
   });
   const written = [];
-  const app = express();
-  app.use('/import', createImportRouter(express.Router(), {
-    bindings: { people: { adapter, ctx: undefined } },
-    onImport: records => { written.push(...records); },
-  }));
-  const server = app.listen(0);
+  const server = createServer(async (req, res) => {
+    const upload = await receiveUpload(req, resolveLimits());
+    const result = await runImport({ stream: upload.stream, plan: readPlanField(upload.fields), adapter, ctx: undefined, onBatch: records => { written.push(...records); } });
+    res.end(JSON.stringify(result));
+  }).listen(0);
   try {
     const form = new FormData();
     form.append('plan', JSON.stringify({ target: 'people', entries: [{ ref: 'name', column: 0 }, { ref: 'birthDate', column: 1 }] }));
     form.append('file', new Blob([bytes]), 'case1.xlsx');
-    const response = await fetch('http://127.0.0.1:' + server.address().port + '/import/people/import', { method: 'POST', body: form });
+    const response = await fetch('http://127.0.0.1:' + server.address().port + '/', { method: 'POST', body: form });
     const body = await response.json();
     expect(response.status).toBe(200);
     expect(body.imported).toBe(2);
@@ -317,13 +314,12 @@ test('receives an upload through createImportRouter', async () => {
   run(process.execPath, [path.join(jest, 'node_modules/jest/bin/jest.js'), '--ci'], { cwd: jest, env: cleanEnv, stdio: 'inherit' });
   console.log('  Jest: CommonJS, no Node flags; /node reads a workbook and receives an upload');
 
-  // The typings against each major of @types/express, with skipLibCheck off so the package's
-  // own .d.ts files are checked too.
-  for (const major of [4, 5]) {
-    const dir = project(`types-express${major}`, {
+  // The typings, with skipLibCheck off so the package's own .d.ts files are checked too, used the
+  // way the README shows.
+  {
+    const dir = project('types', {
       typescript: pkg.devDependencies.typescript,
       '@types/node': pkg.devDependencies['@types/node'],
-      '@types/express': `^${major}`,
     });
     fs.writeFileSync(
       path.join(dir, 'tsconfig.json'),
@@ -344,54 +340,57 @@ test('receives an upload through createImportRouter', async () => {
     fs.writeFileSync(
       path.join(dir, 'app.ts'),
       `
-import express from 'express';
-import { jsonSchemaAdapter } from 'sheet-to-schema';
-import { createImportRouter, sendFailure, type ImportBinding, type ImportRequest } from 'sheet-to-schema/node';
+import { createServer } from 'node:http';
+import { jsonSchemaAdapter, SERVER_FEATURES, type ImportPreviewResponse } from 'sheet-to-schema';
+import {
+  previewSheet,
+  readPlanField,
+  receiveUpload,
+  resolveLimits,
+  runImport,
+  templateFilename,
+  templateOf,
+  toErrorBody,
+  writeTemplate,
+  type ImportRunResult,
+} from 'sheet-to-schema/node';
 
 const adapter = jsonSchemaAdapter({ type: 'object', properties: { name: { type: 'string' } } });
-const people: ImportBinding = { adapter, ctx: undefined };
-const app = express();
+const limits = resolveLimits({ maxBytes: 1024 * 1024 });
+declare function saveAll(records: Record<string, unknown>[]): Promise<void>;
 
-// As the README shows: the router goes straight to app.use.
-app.use('/import', createImportRouter(express.Router(), { bindings: { people }, onImport: async () => {} }));
-
-// A callback that wants the whole Express request annotates it, and the options take that type.
-interface WithTenant extends express.Request {
-  tenant?: string;
-}
-const tenantRouter: express.Router = createImportRouter(express.Router(), {
-  bindings: (name: string, request: WithTenant) => (request.tenant && name === 'people' ? people : undefined),
-  onImport: (records, { request }) => {
-    const tenant: string | undefined = request.tenant;
-    void [records, tenant];
-  },
-  lang: request => String(request.query['lang'] ?? 'en'),
+createServer(async (req, res) => {
+  try {
+    if (req.url === '/template') {
+      res.setHeader('Content-Disposition', 'attachment; filename="' + templateFilename(adapter.id, 'csv') + '"');
+      await writeTemplate({ sheet: templateOf(adapter, 'en', undefined), format: 'csv', out: res });
+      return;
+    }
+    const upload = await receiveUpload(req, limits);
+    if (req.url === '/preview') {
+      const preview = await previewSheet({ stream: upload.stream, filename: upload.filename, adapter, limits });
+      const answer: Pick<ImportPreviewResponse, 'headers' | 'features'> = { headers: preview.headers, features: [...SERVER_FEATURES] };
+      res.end(JSON.stringify(answer));
+      return;
+    }
+    const result: ImportRunResult = await runImport({
+      stream: upload.stream,
+      plan: readPlanField(upload.fields),
+      adapter,
+      ctx: undefined,
+      limits,
+      onBatch: records => saveAll(records),
+    });
+    res.end(JSON.stringify(result));
+  } catch (error) {
+    const { status, body } = toErrorBody(error);
+    res.writeHead(status).end(JSON.stringify(body));
+  }
 });
-app.use('/tenant', tenantRouter);
-
-// The README's form: an intersection, read again in onImport.
-declare function saveAll(tenant: string, records: Record<string, unknown>[]): Promise<void>;
-app.use(
-  '/readme',
-  createImportRouter(express.Router(), {
-    bindings: (name, request: express.Request & { tenant: string }) => (request.tenant ? people : undefined),
-    onImport: async (records, { request }) => saveAll(request.tenant, records),
-  }),
-);
-
-// An Express response is a response this package can answer on.
-app.use((error: unknown, _request: express.Request, response: express.Response, _next: express.NextFunction) => {
-  sendFailure(response, error);
-});
-
-// Nothing Express-specific is needed to describe a request.
-const contentType = (request: ImportRequest): string | undefined => request.headers['content-type'];
-void contentType;
 `,
     );
     run(process.execPath, [path.join(dir, 'node_modules/typescript/bin/tsc'), '-p', '.'], { cwd: dir, stdio: 'inherit' });
-    const version = JSON.parse(fs.readFileSync(path.join(dir, 'node_modules/@types/express/package.json'), 'utf8')).version;
-    console.log(`  typings: compile against @types/express@${version} with skipLibCheck off`);
+    console.log('  typings: compile with skipLibCheck off, used as the README shows');
   }
 
   console.log('Consumer verification passed.');

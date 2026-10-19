@@ -73,8 +73,9 @@ export async function* xlsxRows(
    * **Do not race each pull against a stream-error promise.** `guardZip` validates the whole
    * archive before the parser is constructed, so a malformed zip cannot stall this loop — and
    * racing every row against one long-lived promise attaches a reaction per row that is never
-   * released (about 1.9 KB a row, 75 MB over fifty thousand rows). A request that hangs for any
-   * other reason is the Express adapter's `totalTimeoutMs` to answer; that layer owns a clock.
+   * released (about 1.9 KB a row, 75 MB over fifty thousand rows). An upload that stalls is
+   * `receiveUpload`'s `idleTimeoutMs` to answer, and a run that takes too long is the caller's,
+   * through `runImport`'s `signal`; each owns a clock.
    */
   let expected = 1;
   let yielded = false;

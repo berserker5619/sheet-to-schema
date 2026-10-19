@@ -27,7 +27,7 @@ Thanks for contributing!
 Before submitting a pull request, ensure all gates pass:
 - `npm run lint` (TypeScript compile + ESLint + control characters check + no relative links in the published README + the release dist-tag dry run)
 - `npm run build` (tsup compile to CJS/ESM + DTS)
-- `npm run check:bundle` (verifies entry point boundaries)
+- `npm run check:bundle` (verifies entry point boundaries, and that nothing shipped mentions the router 2.0 removed)
 - `npm run check:package` (manifest and version parity)
 - `npm run test` (Jest unit and acceptance tests)
 - `npm run test:coverage` (enforces coverage thresholds)

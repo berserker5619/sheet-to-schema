@@ -25,7 +25,7 @@ import { isUnsafePath } from './safe-path';
 export interface ReadPlanOptions {
   /**
    * Tooling only (rule 5): an unknown key becomes a warning and is dropped, on any plan.
-   * Never set for `runImport` or the HTTP router, where ignoring `group` would import one
+   * Never set for `runImport`, where ignoring `group` would import one
    * record per row instead of one per group.
    */
   allowUnknownKeys?: boolean;

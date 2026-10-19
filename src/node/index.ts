@@ -1,7 +1,8 @@
 // sheet-to-schema/node: everything that needs Node (https://github.com/berserker5619/Dynamic-Entity/blob/main/docs/phase2-plan.md, "/node subpath").
 //
 // The main entry is browser-safe and has no runtime dependencies. What is here reads files and
-// serves HTTP, so it may use Node built-ins and the optional peers `exceljs` and `busboy`.
+// uploads, so it may use Node built-ins and the optional peers `exceljs` and `busboy`. Routes,
+// storage and jobs are the app's: this entry is functions.
 // Code here imports the main entry by its package name, never by a relative path, so this
 // bundle holds no second copy of the engine: a plan, a result or an `ImportFailure` is the
 // same thing on both sides.
@@ -25,26 +26,14 @@ export { detectFormat, guardRows, readSheet } from './read-sheet';
 export type { ReadSheetOptions, SheetFormat, SheetSource } from './read-sheet';
 
 // ─── Writing a template ─────────────────────────────────────────────────────
-export { TEMPLATE_EXTENSION, TEMPLATE_MEDIA_TYPE, writeTemplate } from './write-template';
+export { TEMPLATE_EXTENSION, TEMPLATE_MEDIA_TYPE, templateFilename, templateOf, writeTemplate } from './write-template';
 export type { TemplateFormat, TemplateSheet, WriteTemplateOptions } from './write-template';
 
 // ─── Running an import ──────────────────────────────────────────────────────
 export { GROUPING_NOT_STREAMED, NON_CONTIGUOUS_NOT_STREAMED, previewSheet, runImport } from './run-import';
 export type { BatchInfo, ImportRunResult, OnBatch, PreviewSheetOptions, RunImportOptions, SheetPreview } from './run-import';
 
-// ─── Over HTTP ──────────────────────────────────────────────────────────────
-// The upload reader on its own, for a server that wires its own routes on another framework.
-export { readPlanField, receiveUpload, safeFieldName } from './multipart';
+// ─── An upload ──────────────────────────────────────────────────────────────
+// One file and its plan out of a multipart request, for routes the app writes itself.
+export { readPlanField, receiveUpload } from './multipart';
 export type { Upload } from './multipart';
-export { createImportRouter, sendFailure, SERVER_FEATURES, templateFilename, templateOf } from './router';
-export type {
-  BindingSource,
-  ImportBinding,
-  ImportErrorReport,
-  ImportHandler,
-  ImportRequest,
-  ImportResponse,
-  ImportRouter,
-  ImportRouterOptions,
-  OnImport,
-} from './router';

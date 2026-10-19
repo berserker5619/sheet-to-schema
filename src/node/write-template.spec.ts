@@ -1,8 +1,8 @@
-import { parseCsv, toCsv } from 'sheet-to-schema';
+import { jsonSchemaAdapter, parseCsv, toCsv } from 'sheet-to-schema';
 import { PassThrough } from 'node:stream';
 import { readSheet } from './read-sheet';
 import { HEADERS } from './sheet.fixtures';
-import { TEMPLATE_MEDIA_TYPE, writeTemplate, type TemplateFormat, type TemplateSheet } from './write-template';
+import { TEMPLATE_MEDIA_TYPE, templateFilename, templateOf, writeTemplate, type TemplateFormat, type TemplateSheet } from './write-template';
 
 /** Run a write and collect what came out. */
 async function write(sheet: TemplateSheet, format: TemplateFormat): Promise<Buffer> {
@@ -131,5 +131,52 @@ describe('writeTemplate — limits', () => {
   it('names a media type for every format it writes', () => {
     expect(TEMPLATE_MEDIA_TYPE.csv).toContain('text/csv');
     expect(TEMPLATE_MEDIA_TYPE.xlsx).toContain('spreadsheetml');
+  });
+});
+
+// Moved here from the router (2.0): an app serving its own template route needs both.
+describe('templateFilename', () => {
+  it('keeps only characters that cannot mean anything in a header', () => {
+    expect(templateFilename('people\r\nX-Injected: 1', 'csv')).toBe(
+      'people--X-Injected--1-template.csv',
+    );
+    expect(templateFilename('../../etc/passwd', 'xlsx')).toBe('etc-passwd-template.xlsx');
+  });
+
+  it('falls back to a name rather than producing a bare extension', () => {
+    expect(templateFilename('///', 'csv')).toBe('import-template.csv');
+  });
+});
+
+describe('templateOf', () => {
+  const people = jsonSchemaAdapter({
+    $id: 'people',
+    type: 'object',
+    required: ['name'],
+    properties: {
+      name: { type: 'string', title: 'Name' },
+      born: { type: 'string', format: 'date', title: 'Born' },
+      phones: { type: 'array', title: 'Phone', items: { type: 'object', properties: { number: { type: 'string', title: 'Number' } } } },
+    },
+  });
+
+  it('offers every target, with each array at the default number of slots', () => {
+    expect(templateOf(people, 'en', undefined)).toEqual({
+      sheetName: 'people',
+      headers: ['Name', 'Born', 'Phone / Number 1', 'Phone / Number 2', 'Phone / Number 3'],
+      notes: ['Required', 'YYYY-MM-DD', '', '', ''],
+    });
+  });
+
+  it('keeps a selection, named by shape ref, and joins what it has to say about a column', () => {
+    const required = jsonSchemaAdapter({ $id: 'x', type: 'object', required: ['born'], properties: { born: { type: 'string', format: 'date' }, name: { type: 'string' } } });
+    expect(templateOf(required, 'en', ['born'])).toEqual({ sheetName: 'x', headers: ['born'], notes: ['Required. YYYY-MM-DD'] });
+    expect(templateOf(people, 'en', ['phones.number']).headers).toEqual(['Phone / Number 1', 'Phone / Number 2', 'Phone / Number 3']);
+    expect(templateOf(people, 'en', ['nothing']).headers).toEqual([]);
+  });
+
+  it('writes as a template', async () => {
+    const csv = (await write(templateOf(people, 'en', undefined), 'csv')).toString('utf8');
+    expect(parseCsv(csv).headers).toEqual(['Name', 'Born', 'Phone / Number 1', 'Phone / Number 2', 'Phone / Number 3']);
   });
 });

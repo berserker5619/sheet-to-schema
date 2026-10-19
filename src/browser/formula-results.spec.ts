@@ -6,11 +6,9 @@
  * cached `0` or `false`. Both readers now take the formula out before parsing
  * (`shared/formula-filter.ts`).
  */
-import express from 'express';
-import request from 'supertest';
 import ExcelJS from 'exceljs';
 import { jsonSchemaAdapter } from 'sheet-to-schema';
-import { createImportRouter } from '../node/router';
+import { runImport } from '../node/run-import';
 import { fixtureBytes, serverGrid } from './parity.fixtures';
 import { readSheetFile } from './read-sheet-file';
 
@@ -34,7 +32,7 @@ describe('formula results are their cached values, typed', () => {
     expect((await readSheetFile(bytes)).rows).toEqual(EXPECTED_ROWS);
   });
 
-  it('through the router, into typed fields', async () => {
+  it('through runImport, into typed fields', async () => {
     const adapter = jsonSchemaAdapter(
       {
         $id: 'results',
@@ -51,11 +49,15 @@ describe('formula results are their cached values, typed', () => {
     );
     const plan = { planVersion: 2, target: 'results', schemaVersion: 1, entries: ['kind', 'flag', 'problem', 'on', 'amount'].map((ref, column) => ({ ref, column })) };
     const written: Record<string, unknown>[] = [];
-    const server = express();
-    server.use('/import', createImportRouter(express.Router(), { bindings: { results: { adapter, ctx: undefined } }, onImport: records => void written.push(...records) }));
-    const response = await request(server).post('/import/results/import').field('plan', JSON.stringify(plan)).attach('file', bytes, 'formula_results.xlsx');
-    expect(response.status).toBe(200);
-    expect(response.body.errors).toEqual([]);
+    const result = await runImport({
+      stream: bytes,
+      filename: 'formula_results.xlsx',
+      plan,
+      adapter,
+      ctx: undefined,
+      onBatch: records => void written.push(...records),
+    });
+    expect(result.errors).toEqual([]);
     expect(written).toEqual([
       { kind: 'plain', flag: true, problem: '#DIV/0!', on: '2026-10-18', amount: 2 },
       { kind: 'shared', flag: false, problem: '#DIV/0!', on: '1999-12-31', amount: 3.25 },

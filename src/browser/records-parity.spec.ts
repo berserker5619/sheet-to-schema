@@ -1,17 +1,15 @@
 /**
  * Records parity (1.1 spec, A): every parity fixture through `readSheetFile` + `applyMapping`,
  * with the decimal mark from the returned separator, gives the same records, errors, warnings
- * and counts as the same file uploaded to the server's router.
+ * and counts as the same file streamed through the server's `runImport`.
  *
  * Each fixture gets a schema with one field per column, typed from what the server reads there:
  * a column of numbers (or number text, so a semicolon file's `12,50` is exercised) is a number,
  * a column of booleans a boolean, a column of dates a date, anything else a string. Typing is
  * what makes coercion, and therefore the decimal mark and typed cells, part of the comparison.
  */
-import express from 'express';
-import request from 'supertest';
 import { applyMapping, decimalMarkFor, jsonSchemaAdapter, type JsonSchemaNode } from 'sheet-to-schema';
-import { createImportRouter, type OnImport } from '../node/router';
+import { runImport } from '../node/run-import';
 import { ALL_FIXTURES, fixtureBytes, nameOf, serverGrid } from './parity.fixtures';
 import { readSheetFile } from './read-sheet-file';
 
@@ -36,10 +34,10 @@ async function bindingFor(file: string) {
   return { adapter, plan };
 }
 
-/** Records and problems as they cross the wire: what JSON keeps of them. */
+/** Records and problems as JSON keeps them, so a `Date` and its text compare alike. */
 const wire = (value: unknown): unknown => JSON.parse(JSON.stringify(value));
 
-describe('records parity: readSheetFile + applyMapping and the server router agree', () => {
+describe('records parity: readSheetFile + applyMapping and runImport on the server agree', () => {
   it.each(ALL_FIXTURES.map(fixture => [fixture.file] as const))('%s', async file => {
     const { adapter, plan } = await bindingFor(file);
     const bytes = fixtureBytes(file);
@@ -48,22 +46,20 @@ describe('records parity: readSheetFile + applyMapping and the server router agr
     const client = applyMapping(sheet.rows, plan, adapter, undefined, { decimal: decimalMarkFor(sheet.delimiter) });
 
     const written: Record<string, unknown>[] = [];
-    const onImport: OnImport = records => {
-      written.push(...records);
-    };
-    const server = express();
-    server.use('/import', createImportRouter(express.Router(), { bindings: { fixture: { adapter, ctx: undefined, kind: 'json-schema' } }, onImport }));
-    const response = await request(server)
-      .post('/import/fixture/import')
-      .field('plan', JSON.stringify(plan))
-      .attach('file', bytes, nameOf(file));
+    const server = await runImport({
+      stream: bytes,
+      filename: nameOf(file),
+      plan,
+      adapter,
+      ctx: undefined,
+      onBatch: records => void written.push(...records),
+    });
 
-    expect(response.status).toBe(200);
     expect(client.planProblems.filter(problem => problem.level === 'error')).toEqual([]);
     expect(wire(written)).toEqual(wire(client.records));
-    expect(response.body.errors).toEqual(wire(client.errors));
-    expect(response.body.warnings).toEqual(wire(client.warnings));
-    expect(response.body).toMatchObject({
+    expect(wire(server.errors)).toEqual(wire(client.errors));
+    expect(wire(server.warnings)).toEqual(wire(client.warnings));
+    expect(server).toMatchObject({
       imported: client.imported,
       skipped: client.skipped,
       failed: client.failed,

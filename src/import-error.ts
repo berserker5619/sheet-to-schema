@@ -20,7 +20,7 @@ import type { ImportFailureCode } from './import-failure';
  * Why a request failed, in a form a client can branch on.
  *
  * Closed on purpose: a client that has to match on message text is a client that breaks when
- * the text improves, and the wire shape is shared with every client of the router.
+ * the text improves.
  */
 export type ImportErrorCode =
   /** No file part in the multipart body. */
@@ -39,14 +39,18 @@ export type ImportErrorCode =
   | 'SHEET_TOO_LARGE'
   /**
    * No adapter is registered under the requested name. Dynamic Entity's name for it, kept
-   * because it is on the wire: renaming a code breaks every client that branches on it.
+   * because it is on the wire: renaming a code breaks every client that branches on it. Not
+   * raised by the package since 2.0; an app's own route may raise it.
    */
   | 'UNKNOWN_ENTITY'
   /** The `plan` field is missing, is not JSON, or does not describe this schema. */
   | 'INVALID_PLAN'
-  /** The request took longer than `limits.totalTimeoutMs`, or stalled past the idle bound. */
+  /**
+   * An upload stalled for `limits.idleTimeoutMs`, or its body ended before the file did
+   * (`receiveUpload`).
+   */
   | 'TIMEOUT'
-  /** The consumer's `onImport` threw. Nothing about *why* crosses the wire. */
+  /** The consumer's `onBatch` threw. Nothing about *why* crosses the wire. */
   | 'IMPORT_FAILED'
   /**
    * The browser reader runs where a workbook cannot be read: no `DecompressionStream` with the
@@ -55,8 +59,8 @@ export type ImportErrorCode =
   | 'UNSUPPORTED_RUNTIME'
   /**
    * An optional peer the call needs is not installed (`exceljs` for a workbook, `busboy` for an
-   * upload). `details.peer` names it. The file is fine; the app is missing a package. The router
-   * answers it as `INTERNAL`, so a client is never told what the server has installed.
+   * upload). `details.peer` names it. The file is fine; the app is missing a package.
+   * `toErrorBody` answers it as `INTERNAL`, so a client is never told what the server has installed.
    */
   | 'PEER_MISSING'
   /** Anything else. Deliberately the least informative code there is. */

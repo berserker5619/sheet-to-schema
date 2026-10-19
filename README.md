@@ -8,7 +8,7 @@ one record per row, or per group of rows, reporting every cell it could not use.
 
 - **Browser-safe core, no dependencies.** The main entry runs in a browser tab or in Node.
 - **A streaming server half.** `sheet-to-schema/node` reads CSV and `.xlsx` files of any size
-  with memory bounded by a batch, and serves the import over HTTP.
+  with memory bounded by a batch, and receives uploads. Routes, storage and jobs stay yours.
 - **The same engine on both sides.** A file imports to the same records in the browser and
   on the server, because both run the same function over the same plan.
 - **The same reader on both sides.** `sheet-to-schema/browser` reads a CSV, TSV or `.xlsx`
@@ -25,10 +25,9 @@ npm install sheet-to-schema
 # Only for sheet-to-schema/node and /browser, and only the ones you use:
 npm install exceljs   # to read or write .xlsx (on a server or in a browser)
 npm install busboy    # to receive uploads
-npm install express   # for the ready-made router
 ```
 
-Node 20 or later for the main entry; the three packages above are optional peers, loaded the
+Node 20 or later for the main entry; the two packages above are optional peers, loaded the
 first time they are needed. Reading a CSV needs none of them, through the main entry's
 `readCsvFile`. **`sheet-to-schema/browser` needs `exceljs` installed for a bundled app to
 build**, even one that never reads a workbook: see the browser section.
@@ -142,7 +141,7 @@ Rows of a group that disagree on a parent field keep the first row's value and r
 **warning**: the record is still imported. A problem inside one collected item, such as
 `items.2.sku` being required, names that item's own row (from 1.3); a problem with the record
 as a whole names the group's first row and carries all its rows in `rows`. Grouping works in `applyMapping`. On the server it
-is opt-in in 1.1: `runImport` and `createImportRouter` group when given `grouping: true`, and
+is opt-in in 1.1: `runImport` groups when given `grouping: true`, and
 give the same records as `applyMapping` (a group that straddles a batch is carried into the next
 one and written whole). Without it a grouped plan is refused, as in 1.0. The runner groups
 contiguous rows only (sort the sheet by the key columns); `contiguous: false` works in
@@ -259,65 +258,49 @@ Known limitations of the browser path:
 
 ## On a server: `sheet-to-schema/node`
 
-```ts
-import express from 'express';
-import { createImportRouter } from 'sheet-to-schema/node';
+Functions, not routes: the app owns its routes, storage and jobs, and calls these from them.
 
-const app = express();
-app.use(
-  '/import',
-  createImportRouter(express.Router(), {
-    bindings: { order: { adapter, ctx: undefined, kind: 'json-schema' } },
-    dateOrder: 'DMY',
-    // Opt-in in 1.1: import plans that group rows into one record (previews then say "group").
-    grouping: true,
-    // Called once per batch, and awaited. It must be idempotent: a client will retry.
-    onImport: async (records, { name }) => saveAll(name, records),
-  }),
-);
-```
-
-| Route | What it does |
+| Function | What it does |
 | --- | --- |
-| `GET /:name/template?format=csv\|xlsx` | A blank sheet with the right headers |
-| `POST /:name/preview` | Headers, a sample, a suggested plan, and which plan versions this server reads |
-| `POST /:name/validate` | The whole import with nothing written: every error, before anything is stored |
-| `POST /:name/import` | The import. Multipart: the `plan` field first, then the `file` |
-
-Without Express, call `runImport`, `previewSheet`, `writeTemplate` and `receiveUpload`
-yourself; the router is a few lines over them.
-
-The typings need nothing from `@types/express`: the router, request and response are typed by
-what the router uses (`ImportRouter`, `ImportRequest`, `ImportResponse`), and an Express 4 or 5
-router fits them. A callback that needs more of the request annotates it, and the options take
-that type:
+| `receiveUpload(request, limits)` | One file and the fields before it out of a multipart request, streamed |
+| `readPlanField(fields)` | The JSON `plan` field, refused with `INVALID_PLAN` when missing or not JSON |
+| `previewSheet({ stream, adapter })` | Headers, a sample, a row count and a suggested plan |
+| `runImport({ stream, plan, adapter, ctx, onBatch })` | The import, a batch at a time; without `onBatch`, a validation that writes nothing |
+| `writeTemplate({ sheet, format, out })`, `templateOf`, `templateFilename` | A blank sheet with the right headers |
+| `toErrorBody(error)` | Anything thrown as a status and a body that says nothing about internals |
 
 ```ts
-createImportRouter(express.Router(), {
-  bindings: (name, request: express.Request & { tenant: string }) => loadBinding(request.tenant, name),
-  onImport: async (records, { request }) => saveAll(request.tenant, records), // request is typed the same
+import { readFile } from 'node:fs/promises';
+import { runImport } from 'sheet-to-schema/node';
+
+const result = await runImport({
+  stream: await readFile('orders.xlsx'),
+  filename: 'orders.xlsx',
+  plan,
+  adapter,
+  ctx: undefined,
+  dateOrder: 'DMY',
+  // Called once per batch, and awaited. It must be idempotent: a run can be repeated.
+  onBatch: async records => saveAll(records),
 });
 ```
 
-Five things to know before deploying it:
+Four things to know before deploying it:
 
 1. **An import is not transactional.** A file that fails at row 30,000 has written 29,999
-   records. Run `/validate` first, and make your writer idempotent. A grouped import can stop
-   on a group limit or a key that comes back, after earlier groups were written; `/validate`
-   runs the same pipeline and finds that first.
-2. **Authentication, authorization and concurrency are yours.** The router checks none.
+   records. Validate first (`runImport` without `onBatch`), and make your writer idempotent. A
+   grouped import can stop on a group limit or a key that comes back, after earlier groups were
+   written; validating runs the same pipeline and finds that first.
+2. **Authentication, authorization and concurrency are yours.** The functions check none.
 3. **Every limit is on by default**: bytes, rows, columns, cell size, zip expansion, group
-   size and count, idle and total time. See `DEFAULT_LIMITS`; pass `limits` to change one.
+   size and count, and how long an upload may stall (`receiveUpload`). See `DEFAULT_LIMITS`;
+   pass `limits` to change one.
 4. **A client must check what the server reads.** `planForServer(plan, preview)` returns the
    plan to send to that server, or the reason not to: a server from before plan v2 would ignore
    `group` and import one record per row, and a 1.0 server reads plan v2 but refuses `group`.
-   A preview lists `planVersions` and, from 1.1, `features` (`["group"]` on a router created
-   with `grouping: true`); a missing `features` means the server will not group. The 1.0 form, `planForServer(plan, preview.planVersions)`,
-   still works and checks plan versions only.
-5. **A 500 tells the client nothing, so the server is told instead.** From 1.2, `onError`
-   receives every failure the router answers with a 5xx, with its own code, such as
-   `PEER_MISSING` for a server without `exceljs`, answered `INTERNAL`, and the package. Without
-   `onError`, it is one `console.error` line and the error.
+   A server's preview lists `planVersions` and `features` (`SERVER_FEATURES`, `["group"]`, when
+   it groups); a missing `features` means the server will not group. The 1.0 form,
+   `planForServer(plan, preview.planVersions)`, still works and checks plan versions only.
 
 ## Problem codes
 
@@ -329,7 +312,7 @@ Five things to know before deploying it:
 
 `PLAN_PROBLEM_CODES`, `CELL_PROBLEM_CODES` and `RECORD_PROBLEM_CODES` list them all. A
 server's `PLAN_GROUP` refusal of a valid grouped plan also carries a `reason` (from 1.2.0):
-`grouping-disabled` (the router was created without `grouping: true`) or `non-contiguous`
+`grouping-disabled` (`runImport` was called without `grouping: true`) or `non-contiguous`
 (`group.contiguous: false`, which the server never streams). Compare `reason`, never the
 message.
 

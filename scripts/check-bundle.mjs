@@ -36,7 +36,7 @@ import * as esbuild from 'esbuild';
 import ts from 'typescript';
 
 const ROOT = process.cwd();
-const PEERS = ['exceljs', 'busboy', 'express'];
+const PEERS = ['exceljs', 'busboy'];
 const BUILTINS = new Set(builtinModules.flatMap(name => [name, `node:${name}`]));
 /** Classes only the main entry defines; `/node` and `/browser` import them by name. ImportError since 1.2. */
 const ENGINE_CLASSES = [

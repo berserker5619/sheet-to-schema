@@ -84,10 +84,15 @@ export interface ImportLimits extends GroupLimits {
 
   // ── The clock ─────────────────────────────────────────────────────────────
 
-  /** Milliseconds of silence on the request body before it is abandoned. Slowloris. */
+  /**
+   * Milliseconds an upload's body may go without sending a byte while it is being read, before
+   * `receiveUpload` abandons it with `TIMEOUT` and closes the connection. Slowloris. Time the
+   * body spends paused because its reader is not pulling (a slow `onBatch`) does not count.
+   *
+   * A whole run has no limit here: bound one with `runImport`'s `signal`, as in
+   * `signal: AbortSignal.timeout(ms)`.
+   */
   idleTimeoutMs: number;
-  /** Milliseconds a whole request may take, however chatty it is. */
-  totalTimeoutMs: number;
 }
 
 /**
@@ -119,7 +124,6 @@ export const DEFAULT_LIMITS: ImportLimits = {
   sampleRows: 5,
 
   idleTimeoutMs: 30_000,
-  totalTimeoutMs: 10 * 60_000,
 };
 
 /**

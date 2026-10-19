@@ -1,4 +1,5 @@
-import { planForServer, v2OnlyFields } from './plan-for-server';
+import { planForServer, SERVER_FEATURES, v2OnlyFields } from './plan-for-server';
+import * as main from './index';
 import { readPlan } from './read-plan';
 
 const entries = [
@@ -120,5 +121,18 @@ describe('planForServer(plan, preview): the server must also say it groups (1.1)
 
   it('leaves the 1.0 form exactly as it was: it never refuses for group on a v2 server', () => {
     expect(planForServer(grouped, [1, 2])).toEqual({ plan: grouped });
+  });
+});
+
+describe('SERVER_FEATURES (main entry from 2.0)', () => {
+  it('is the vocabulary planForServer reads: a preview sending it is a server that groups', () => {
+    const grouped = { ...V2, group: { key: [0], collect: ['phones'] } };
+    expect(SERVER_FEATURES).toEqual(['group']);
+    expect(planForServer(grouped, { planVersions: [1, 2], features: [...SERVER_FEATURES] }).plan).toBe(grouped);
+  });
+
+  it('is exported from the main entry, next to planForServer, and cannot be changed', () => {
+    expect(main.SERVER_FEATURES).toBe(SERVER_FEATURES);
+    expect(Object.isFrozen(SERVER_FEATURES)).toBe(true);
   });
 });
