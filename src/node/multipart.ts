@@ -95,10 +95,15 @@ export async function receiveUpload(request: IncomingMessage, limits: ImportLimi
     const fields: Record<string, string> = {};
     let sawFile = false;
 
+    // busboy applies `fieldNameSize` to urlencoded bodies only: a multipart part's name is never
+    // truncated, and `nameTruncated` is always false there. So the bound is checked here, on
+    // every part, a field or a file (2.0; 1.x accepted any name).
+    const nameTooLong = (name: string): boolean => Buffer.byteLength(name, 'utf8') > limits.maxFieldNameBytes;
+
     parser.on('field', (name, value, info) => {
       // Truncation is busboy's way of enforcing a limit, and a silently shortened JSON plan
       // would fail to parse later with a message about JSON rather than about a limit.
-      if (info.nameTruncated || info.valueTruncated) {
+      if (nameTooLong(name) || info.nameTruncated || info.valueTruncated) {
         fail(new ImportError('TOO_LARGE', `The "${safeFieldName(name)}" field is too long.`));
         return;
       }
@@ -112,7 +117,12 @@ export async function receiveUpload(request: IncomingMessage, limits: ImportLimi
       fields[name] = value;
     });
 
-    parser.on('file', (_name, stream, info) => {
+    parser.on('file', (name, stream, info) => {
+      if (nameTooLong(name)) {
+        stream.resume();
+        fail(new ImportError('TOO_LARGE', `The "${safeFieldName(name)}" field is too long.`));
+        return;
+      }
       if (sawFile) {
         stream.resume();
         fail(new ImportError('TOO_MANY_FILES', 'Send one file at a time.'));

@@ -56,6 +56,9 @@ branch under the `release-1.x` dist-tag.
   `readCsvFile`, all alike. In 1.x it was read as CSV. Every CSV and workbook 1.x read still
   reads exactly as 1.3.0 read it, which is checked against grids 1.3.0 itself wrote.
   Classification now looks at up to 8 KB before the first row (it was 8 bytes).
+- **`receiveUpload` enforces `limits.maxFieldNameBytes`** on every part, refusing a longer name
+  with `TOO_LARGE`. busboy applies its `fieldNameSize` to urlencoded bodies only, so 1.x
+  accepted any part name in a multipart upload, as 1.3.0 still does.
 - The package no longer raises `UNKNOWN_ENTITY`. The code stays in `ImportErrorCode`.
 
 ---
