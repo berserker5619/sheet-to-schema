@@ -52,10 +52,28 @@ function run(version, tags, versions = Object.values(tags)) {
 
 const cases = [
   {
-    name: 'v1.3.1 while latest and next are 1.3.0 (today)',
+    name: 'v1.3.1 while latest and next are 1.3.0: latest is an older 1.x, so it moves; next does not',
     version: '1.3.1',
     tags: { latest: '1.3.0', next: '1.3.0' },
-    expect: { publishedUnder: 'release-1.x', moved: [], tags: { latest: '1.3.0', next: '1.3.0', 'release-1.x': '1.3.1' } },
+    expect: { publishedUnder: 'release-1.x', moved: ['latest'], tags: { latest: '1.3.1', next: '1.3.0', 'release-1.x': '1.3.1' } },
+  },
+  {
+    name: 'v1.3.2 while latest is 1.3.1 and next a 2.0 prerelease: latest moves, next stays',
+    version: '1.3.2',
+    tags: { latest: '1.3.1', next: '2.0.0-rc.1', 'release-1.x': '1.3.1' },
+    expect: { publishedUnder: 'release-1.x', moved: ['latest'], tags: { latest: '1.3.2', next: '2.0.0-rc.1', 'release-1.x': '1.3.2' } },
+  },
+  {
+    name: 'v1.3.2 while latest is 2.0.0: latest and next stay',
+    version: '1.3.2',
+    tags: { latest: '2.0.0', next: '2.0.0', 'release-1.x': '1.3.1' },
+    expect: { publishedUnder: 'release-1.x', moved: [], tags: { latest: '2.0.0', next: '2.0.0', 'release-1.x': '1.3.2' } },
+  },
+  {
+    name: 'v1.3.1 while latest is already 1.3.2: not older, so it stays',
+    version: '1.3.1',
+    tags: { latest: '1.3.2', next: '2.0.0-rc.1' },
+    expect: { publishedUnder: 'release-1.x', moved: [], tags: { latest: '1.3.2', next: '2.0.0-rc.1', 'release-1.x': '1.3.1' } },
   },
   {
     name: 'v1.3.1 after 2.0.0 is latest and a 2.1 prerelease is next',
