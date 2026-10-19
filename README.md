@@ -14,7 +14,7 @@ one record per row, or per group of rows, reporting every cell it could not use.
 - **The same reader on both sides.** `sheet-to-schema/browser` reads a CSV, TSV or `.xlsx`
   file in a browser into exactly the rows the server reads from the same bytes.
 
-> **Status: stable (1.2.0); 1.3.0-rc.1 on `next`.** It is the import engine of
+> **Status: stable (1.3.0).** It is the import engine of
 > [Dynamic Entity](https://github.com/berserker5619/Dynamic-Entity#readme) 3.0, extracted so it can be used without it.
 > Members marked `@internal` are not covered by semver and may change in any release.
 

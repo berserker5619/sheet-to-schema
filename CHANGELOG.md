@@ -6,11 +6,13 @@ This project follows [Semantic Versioning](https://semver.org/spec/v2.0.0.html).
 
 ---
 
-## [1.3.0-rc.1]
+## [1.3.0]
 
 Found by Dynamic Entity's 3.1 tests (B1, its docs/3.1-spec.md): in a grouped record, a
 problem inside one collected item was reported on the group's first row, carrying every row of
-the group. In a 40-row order, the user had to find the bad item themselves.
+the group. In a 40-row order, the user had to find the bad item themselves. The code is
+identical to 1.3.0-rc.1, which Dynamic Entity's drift check passed on `next`; only the version
+and the docs changed.
 
 ### Changed
 
