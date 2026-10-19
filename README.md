@@ -6,17 +6,23 @@ You describe where records go (a JSON Schema, an example record, or your own ada
 library suggests which column feeds which field, lets a person correct that, and then builds
 one record per row, or per group of rows, reporting every cell it could not use.
 
+It is a set of functions: **preview** a file, **validate** it, **import** it. It reads, matches,
+validates and streams. Your app owns the routes, the storage, the jobs and the queues.
+
 - **Browser-safe core, no dependencies.** The main entry runs in a browser tab or in Node.
 - **A streaming server half.** `sheet-to-schema/node` reads CSV and `.xlsx` files of any size
-  with memory bounded by a batch, and receives uploads. Routes, storage and jobs stay yours.
+  with memory bounded by a batch, can be cancelled and reports its progress.
 - **The same engine on both sides.** A file imports to the same records in the browser and
   on the server, because both run the same function over the same plan.
 - **The same reader on both sides.** `sheet-to-schema/browser` reads a CSV, TSV or `.xlsx`
   file in a browser into exactly the rows the server reads from the same bytes.
 
-> **Status: stable (1.3.0).** It is the import engine of
-> [Dynamic Entity](https://github.com/berserker5619/Dynamic-Entity#readme) 3.0, extracted so it can be used without it.
-> Members marked `@internal` are not covered by semver and may change in any release.
+> **Status: 2.0 release candidate.** Coming from 1.x: read
+> [MIGRATING-2.0.md](https://github.com/berserker5619/sheet-to-schema/blob/main/MIGRATING-2.0.md).
+> It is the import engine of [Dynamic Entity](https://github.com/berserker5619/Dynamic-Entity#readme),
+> extracted so it can be used without it; Dynamic Entity 3.x stays on the 1.x line, which is
+> published under the `release-1.x` dist-tag. Members marked `@internal` are not covered by
+> semver and may change in any release.
 
 ## Install
 
@@ -32,7 +38,58 @@ first time they are needed. Reading a CSV needs none of them, through the main e
 `readCsvFile`. **`sheet-to-schema/browser` needs `exceljs` installed for a bundled app to
 build**, even one that never reads a workbook: see the browser section.
 
-## Quick start
+## Preview, validate, import
+
+Three calls on a file, here read from disk. On a server the file comes from an upload; the
+recipe [Background imports with polling](#recipe-background-imports-with-polling) shows that.
+
+<!-- compiled: functions -->
+```ts
+import { readFile } from 'node:fs/promises';
+import { jsonSchemaAdapter } from 'sheet-to-schema';
+import { previewSheet, runImport } from 'sheet-to-schema/node';
+
+const adapter = jsonSchemaAdapter({
+  $id: 'order',
+  type: 'object',
+  required: ['orderId'],
+  properties: { orderId: { type: 'string', title: 'Order' }, total: { type: 'number', title: 'Total' } },
+});
+const file = await readFile('orders.csv');
+
+// 1. Preview: headers, a sample, a row count, and a suggested plan for a person to check.
+const preview = await previewSheet({ stream: file, filename: 'orders.csv', adapter });
+const plan = preview.suggestion; // as the person corrected it on your mapping screen
+
+// 2. Validate: the whole pipeline, nothing written. Every error, before anything is stored.
+const check = await runImport({ stream: file, filename: 'orders.csv', plan, adapter, ctx: undefined });
+console.log(`${check.failed} of ${check.rowsRead} rows fail`, check.errors);
+
+// 3. Import: the same pipeline, each batch handed to you and awaited.
+if (check.failed === 0) {
+  await runImport({
+    stream: file,
+    filename: 'orders.csv',
+    plan,
+    adapter,
+    ctx: undefined,
+    // It must be safe to repeat: an import that stops part-way is run again. Upsert by a key.
+    onBatch: async records => {
+      for (const order of records) await upsertOrder(order);
+    },
+  });
+}
+
+declare function upsertOrder(order: Record<string, unknown>): Promise<void>;
+```
+
+`previewSheet` and `runImport` take a Node stream, a `Buffer`, or any iterable of bytes, and
+never hold the file: memory is bounded by `limits.batchSize`. The format is decided by the
+bytes, never by the name.
+
+## In memory, anywhere: `applyMapping`
+
+The same engine on rows you already hold, in a browser or in Node:
 
 ```ts
 import { applyMapping, jsonSchemaAdapter, parseCsv, suggestMapping } from 'sheet-to-schema';
@@ -153,7 +210,7 @@ contiguous groups) more than 8 MiB of group keys stops the import with an `Impor
 (`GROUP_TOO_LARGE` or `TOO_MANY_GROUPS`), as does a key that comes back after its rows ended
 (`GROUP_NOT_CONTIGUOUS`). Raise a limit with
 `applyMapping(rows, plan, adapter, ctx, { groupLimits: { maxGroupRows: 50_000 } })`, or with the
-server's `limits`. Over HTTP these answer 413 and 422.
+server's `limits`. `toErrorBody` answers these 413 and 422.
 
 ## Dates are never guessed
 
@@ -190,8 +247,9 @@ const sheet = await readCsvFile(file, { filename: file.name });
 const result = applyMapping(sheet.rows, plan, adapter, undefined, { decimal: decimalMarkFor(sheet.delimiter) });
 ```
 
-The format is still decided by the bytes: an `.xlsx` (or any zip), a pre-2007 `.xls` and a
-UTF-16 file are refused with `UNSUPPORTED_FORMAT`, with the server's messages for the last two.
+The format is still decided by the bytes: an `.xlsx` (or any zip), a pre-2007 `.xls`, a
+UTF-16 file and a binary file are refused with `UNSUPPORTED_FORMAT`, with the server's messages
+for the last three.
 
 **CSV and `.xlsx`: `sheet-to-schema/browser`.**
 
@@ -269,21 +327,18 @@ Functions, not routes: the app owns its routes, storage and jobs, and calls thes
 | `writeTemplate({ sheet, format, out })`, `templateOf`, `templateFilename` | A blank sheet with the right headers |
 | `toErrorBody(error)` | Anything thrown as a status and a body that says nothing about internals |
 
-```ts
-import { readFile } from 'node:fs/promises';
-import { runImport } from 'sheet-to-schema/node';
+`runImport` also takes:
 
-const result = await runImport({
-  stream: await readFile('orders.xlsx'),
-  filename: 'orders.xlsx',
-  plan,
-  adapter,
-  ctx: undefined,
-  dateOrder: 'DMY',
-  // Called once per batch, and awaited. It must be idempotent: a run can be repeated.
-  onBatch: async records => saveAll(records),
-});
-```
+- **`signal`**, an `AbortSignal`. Aborted, the run stops reading at once and starts no new batch;
+  an `onBatch` already running is waited for, never cut off. It then rejects with `ABORTED`, its
+  `details` the counts so far. `signal: AbortSignal.timeout(10 * 60_000)` bounds a run's time.
+- **`onProgress`**, told `{ bytesRead, rowsRead }` after each batch and at the end, when
+  `bytesRead` is the file's size: `bytesRead / size` is a progress bar. Never awaited; a callback
+  that throws does not affect the import.
+- **`grouping`**, `true` by default: a plan with a contiguous `group` streams. `false` refuses one.
+
+A request that holds a large import open will be cut off by something on the way; the recipe
+below does it in the background instead.
 
 Four things to know before deploying it:
 
@@ -302,6 +357,193 @@ Four things to know before deploying it:
    it groups); a missing `features` means the server will not group. The 1.0 form,
    `planForServer(plan, preview.planVersions)`, still works and checks plan versions only.
 
+## Recipe: background imports with polling
+
+The recommended way to import a large file on a server. Upload it once, then preview, validate
+and import it from your own storage, as jobs a client polls.
+
+**Why poll.** A 200,000-row import that writes to a database takes minutes. Something between
+the browser and your server, such as a load balancer, a proxy or a platform router, commonly
+cuts a request off after 30 to 100 seconds. If the import runs inside that request, the client
+sees a failure while the server is still writing. The client cannot tell how far it got, and
+when it retries it imports the same rows again. With polling, each request is short and the
+import is a job: it runs as long as it needs, reports its progress, and can be cancelled.
+
+The pieces, all in the code below:
+
+1. **Upload once.** `receiveUpload` streams the file to private storage your app owns: not
+   web-served, named by a random id (never by the client's filename), and given an expiry.
+2. **Preview** with `previewSheet`, reading the stored file.
+3. **Validate and import as background jobs** with `runImport` over the stored file. Validation
+   is the same pipeline with an `onBatch` that writes nothing.
+4. **Progress** is `bytesRead / size`, from `onProgress`.
+5. **Cancel** with an `AbortController`. The batch being written finishes, and no new batch
+   starts.
+6. **`onBatch` is safe to repeat.** A job that failed or was cancelled part-way is run again, so
+   it upserts by a key rather than inserting.
+7. **Clean up.** The file is deleted after the import, and an hourly sweep deletes anything past
+   its expiry: uploads nobody imported, or files left behind by a crash.
+
+Wire each exported function to a route of your own, behind your authentication:
+`POST /uploads` → `upload`, `GET /uploads/:id/preview` → `preview`,
+`POST /uploads/:id/validate` and `/import` → `start`, `GET /jobs/:id` → `status`,
+`DELETE /jobs/:id` → `cancel`. Answer a failure with `toErrorBody(error)`.
+
+<!-- compiled: polling -->
+```ts
+import { randomUUID } from 'node:crypto';
+import { createReadStream, createWriteStream } from 'node:fs';
+import { mkdir, readdir, rm, stat } from 'node:fs/promises';
+import type { IncomingMessage } from 'node:http';
+import { join } from 'node:path';
+import { pipeline } from 'node:stream/promises';
+import { ImportError, jsonSchemaAdapter } from 'sheet-to-schema';
+import { previewSheet, receiveUpload, resolveLimits, runImport, toErrorBody, type ImportRunResult } from 'sheet-to-schema/node';
+
+const adapter = jsonSchemaAdapter({
+  $id: 'order',
+  type: 'object',
+  required: ['orderId'],
+  properties: { orderId: { type: 'string', title: 'Order' }, total: { type: 'number', title: 'Total' } },
+});
+const limits = resolveLimits({ maxBytes: 200 * 1024 * 1024, maxRows: 2_000_000 });
+
+// Private storage: outside anything a web server serves, readable by this process only.
+const UPLOADS = process.env.IMPORT_DIR ?? '/var/lib/myapp/imports';
+const TTL_MS = 24 * 60 * 60 * 1000;
+
+interface Stored {
+  id: string;
+  path: string;
+  filename: string;
+  size: number;
+  expiresAt: number;
+}
+
+interface Job {
+  id: string;
+  kind: 'validate' | 'import';
+  state: 'running' | 'done' | 'failed' | 'cancelled';
+  /** 0 to 1: bytes read over the file's size. */
+  progress: number;
+  result?: ImportRunResult;
+  error?: { code: string; message: string };
+  controller: AbortController;
+}
+
+// In memory to keep the recipe short. In production, rows in your database, so that a status
+// survives a restart and any instance can answer a poll.
+const uploads = new Map<string, Stored>();
+const jobs = new Map<string, Job>();
+
+/** POST /uploads: the file, once, streamed to disk. Answers with an id as soon as it is stored. */
+export async function upload(request: IncomingMessage): Promise<{ uploadId: string }> {
+  const { stream, filename } = await receiveUpload(request, limits);
+  await mkdir(UPLOADS, { recursive: true, mode: 0o700 });
+  const id = randomUUID();
+  const path = join(UPLOADS, id);
+  try {
+    // receiveUpload enforces limits.maxBytes and idleTimeoutMs as the bytes arrive.
+    await pipeline(stream, createWriteStream(path, { mode: 0o600 }));
+  } catch (error) {
+    await rm(path, { force: true });
+    throw error;
+  }
+  uploads.set(id, { id, path, filename, size: (await stat(path)).size, expiresAt: Date.now() + TTL_MS });
+  return { uploadId: id };
+}
+
+/** GET /uploads/:id/preview: headers, a sample, a row count and a suggested plan. */
+export async function preview(uploadId: string) {
+  const stored = storedFile(uploadId);
+  return previewSheet({ stream: createReadStream(stored.path), filename: stored.filename, adapter, limits });
+}
+
+/** POST /uploads/:id/validate or /import, with the plan: starts a job and answers at once. */
+export function start(uploadId: string, kind: Job['kind'], plan: unknown): { jobId: string } {
+  const stored = storedFile(uploadId);
+  const job: Job = { id: randomUUID(), kind, state: 'running', progress: 0, controller: new AbortController() };
+  jobs.set(job.id, job);
+
+  runImport({
+    stream: createReadStream(stored.path),
+    filename: stored.filename,
+    plan,
+    adapter,
+    ctx: undefined,
+    limits,
+    signal: job.controller.signal,
+    // Validation is the same pipeline with an onBatch that writes nothing.
+    onBatch: kind === 'import' ? upsertOrders : () => {},
+    onProgress: ({ bytesRead }) => {
+      job.progress = stored.size ? bytesRead / stored.size : 1;
+    },
+  }).then(
+    result => {
+      Object.assign(job, { state: 'done', progress: 1, result });
+      // Imported: the file has done its job. A validated file stays for the import.
+      if (kind === 'import') void forget(stored.id);
+    },
+    (error: unknown) => {
+      const { body } = toErrorBody(error);
+      Object.assign(job, { state: body.error.code === 'ABORTED' ? 'cancelled' : 'failed', error: body.error });
+    },
+  );
+  return { jobId: job.id };
+}
+
+/** GET /jobs/:id: what the client polls, every second or two, until `state` is not `running`. */
+export function status(jobId: string): Omit<Job, 'controller'> {
+  const { controller: _controller, ...visible } = jobFor(jobId);
+  return visible;
+}
+
+/** DELETE /jobs/:id: cancel. Rows already written stay written; run the import again to finish. */
+export function cancel(jobId: string): void {
+  jobFor(jobId).controller.abort();
+}
+
+/**
+ * Where records go. **Safe to repeat**: a job that stopped part-way is run again from the top,
+ * so every write is an upsert on a key the file carries.
+ */
+async function upsertOrders(records: Record<string, unknown>[]): Promise<void> {
+  // For example: INSERT … ON CONFLICT (order_id) DO UPDATE SET total = EXCLUDED.total
+  void records;
+}
+
+function storedFile(uploadId: string): Stored {
+  const stored = uploads.get(uploadId);
+  if (!stored || stored.expiresAt < Date.now()) throw new ImportError('NO_FILE', 'No such upload, or it has expired.');
+  return stored;
+}
+
+function jobFor(jobId: string): Job {
+  const job = jobs.get(jobId);
+  if (!job) throw new ImportError('NO_FILE', 'No such job.');
+  return job;
+}
+
+async function forget(uploadId: string): Promise<void> {
+  const stored = uploads.get(uploadId);
+  uploads.delete(uploadId);
+  if (stored) await rm(stored.path, { force: true });
+}
+
+// The sweep: by the files' own age, so it also finds what a crash left behind.
+setInterval(async () => {
+  const names = await readdir(UPLOADS).catch(() => [] as string[]);
+  for (const name of names) {
+    const path = join(UPLOADS, name);
+    const { mtimeMs } = await stat(path);
+    if (Date.now() - mtimeMs > TTL_MS) await forget(name).then(() => rm(path, { force: true }));
+  }
+}, 60 * 60 * 1000).unref();
+```
+
+A job still running when its file expires keeps reading it: on Linux and macOS, deleting a file
+does not close a stream that has it open. Set the expiry well beyond your longest import.
+
 ## Problem codes
 
 | Prefix | Raised when | Examples |
@@ -312,17 +554,21 @@ Four things to know before deploying it:
 
 `PLAN_PROBLEM_CODES`, `CELL_PROBLEM_CODES` and `RECORD_PROBLEM_CODES` list them all. A
 server's `PLAN_GROUP` refusal of a valid grouped plan also carries a `reason` (from 1.2.0):
-`grouping-disabled` (`runImport` was called without `grouping: true`) or `non-contiguous`
+`grouping-disabled` (`runImport` was called with `grouping: false`) or `non-contiguous`
 (`group.contiguous: false`, which the server never streams). Compare `reason`, never the
 message.
 
 A grouped import can also stop as a whole, with an `ImportFailure` (`IMPORT_FAILURE_CODES`).
-`applyMapping` and `runImport` throw it; over HTTP it is the error body's `code`. And the
-readers can refuse to read a file at all, with an `ImportError` (the main entry exports it from
-1.2.0, for `readCsvFile`):
+`applyMapping` and `runImport` throw it; in `toErrorBody`'s body it is the `code`. And the
+readers can refuse to read a file at all, or a run can be stopped, with an `ImportError` (the
+main entry exports it from 1.2.0, for `readCsvFile`). Each code has the HTTP status
+`toErrorBody` answers with; among them:
 
 | Code | HTTP | Raised when |
 | --- | --- | --- |
+| `UNSUPPORTED_FORMAT` | 415 | The bytes are not a CSV or an `.xlsx`: a pre-2007 `.xls`, UTF-16 text, or (from 2.0) binary, meaning a NUL byte in the first 8 KB, as in an image or a PDF. |
+| `ABORTED` | 499 | `runImport`'s `signal` aborted (2.0). `details` has `rowsRead`, `imported` and `failed`; `cause` is the signal's reason. |
+| `TIMEOUT` | 408 | `receiveUpload`: the upload sent nothing for `limits.idleTimeoutMs`, or ended before the file did. |
 | `UNSUPPORTED_RUNTIME` | (browser only) | `sheet-to-schema/browser` is asked to read a workbook where there is no `DecompressionStream` with `deflate-raw` (see the browser section for versions). A CSV is not affected. |
 | `PEER_MISSING` | (answered as `INTERNAL`, 500) | An optional peer the call needs is not installed: `exceljs` for a workbook, `busboy` for an upload. `details.peer` names it. A server's client is told only `INTERNAL`. |
 | `GROUP_NOT_CONTIGUOUS` | 422 | A group's key comes back after its rows ended. `details` has the key and both rows. |

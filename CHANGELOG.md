@@ -6,6 +6,60 @@ This project follows [Semantic Versioning](https://semver.org/spec/v2.0.0.html).
 
 ---
 
+## [2.0.0]
+
+sheet-to-schema becomes a set of functions: it reads, matches, validates and streams, and the
+app owns routes, storage, jobs and queues. The recommended server pattern is background imports
+with polling (README, "Recipe: background imports with polling"). Upgrading is covered in
+[MIGRATING-2.0.md](MIGRATING-2.0.md), and the decisions in [docs/2.0-spec.md](docs/2.0-spec.md). First published as
+2.0.0-rc.1 under `next`. Dynamic Entity 3.x stays on 1.x, which is now published from the `1.x`
+branch under the `release-1.x` dist-tag.
+
+### Removed
+
+- **`createImportRouter`**, with `ImportRouterOptions` and its @internal `param` and
+  `engineVersion`, `ImportBinding` and its @internal `templateName`, `previewExtras` and `plan`,
+  `BindingSource`, `OnImport`, `ImportHandler`, `ImportRouter`, `ImportRequest`,
+  `ImportResponse` and `ImportErrorReport`. Write the routes from the functions; MIGRATING-2.0.md
+  has a complete Express example.
+- **`sendFailure`**: `toErrorBody(error)`, then answer with its `status` and `body`.
+- **`safeFieldName`** from `/node`'s exports. `receiveUpload` still uses it.
+- **`ImportLimits.totalTimeoutMs`**: only the router enforced it. Bound a run with
+  `runImport({ signal: AbortSignal.timeout(ms) })`.
+- **The `express` optional peer dependency.** The package never imported it.
+- `SERVER_FEATURES` is no longer exported from `/node`. It moved to the main entry.
+
+### Added
+
+- **`runImport({ signal })`.** Aborted, the run stops reading at once and starts no new batch.
+  An `onBatch` already running is waited for, never interrupted. The source is destroyed. The run
+  rejects with `ImportError` `ABORTED`, a new code with status 499, whose `details` are
+  `{ rowsRead, imported, failed }` and whose `cause` is the signal's reason. Already aborted:
+  nothing is read.
+- **`runImport({ onProgress })`**, told `{ bytesRead, rowsRead }` at most once per batch and at
+  the end, when `bytesRead` is the input's size. Never awaited. Anything it throws or rejects
+  with is ignored. Type `ImportProgress`.
+- **`receiveUpload` enforces `limits.idleTimeoutMs`.** A body that sends nothing for that long
+  while it is read fails with `TIMEOUT` ("The upload stalled.") and the connection is closed.
+  Time paused behind a slow reader does not count.
+- `SERVER_FEATURES` in the main entry, next to `planForServer`.
+- `templateOf` and `templateFilename` stay in `/node`, now beside `writeTemplate`, for an app
+  serving its own template route.
+
+### Changed
+
+- **`runImport` groups by default** (`grouping` defaults to `true`). `grouping: false` keeps
+  1.x's refusal (`reason: 'grouping-disabled'`). `contiguous: false` is refused either way.
+- **Binary input is refused.** A file with a NUL byte in its first 8 KB, such as an image, a PDF
+  or an executable, is refused with `UNSUPPORTED_FORMAT` ("This file is not a spreadsheet: it
+  holds binary data. ...") by `readSheet`, `previewSheet`, `runImport`, `readSheetFile` and
+  `readCsvFile`, all alike. In 1.x it was read as CSV. Every CSV and workbook 1.x read still
+  reads exactly as 1.3.0 read it, which is checked against grids 1.3.0 itself wrote.
+  Classification now looks at up to 8 KB before the first row (it was 8 bytes).
+- The package no longer raises `UNKNOWN_ENTITY`. The code stays in `ImportErrorCode`.
+
+---
+
 ## [1.3.0]
 
 Found by Dynamic Entity's 3.1 tests (B1, its docs/3.1-spec.md): in a grouped record, a

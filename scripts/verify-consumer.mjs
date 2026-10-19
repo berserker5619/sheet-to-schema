@@ -13,9 +13,13 @@
  * - jest: a CommonJS Jest project, with no Node flags, that requires `/node`, reads a workbook
  *   and receives an upload. A dynamic `import()` in the CommonJS build fails exactly here.
  * - types: the published typings compile with `skipLibCheck` off, used the way the README shows.
+ * - snippets: the README-snippet check. Every `<!-- compiled: name -->` block in README.md and
+ *   MIGRATING-2.0.md compiles against the package (with express installed in this scratch app
+ *   only), and MIGRATING-2.0's Express example answers preview, validate and import over HTTP.
  * Also: the packed manifest declares no runtime dependencies.
  */
-import { execFileSync } from 'node:child_process';
+import { execFileSync, spawn } from 'node:child_process';
+import net from 'node:net';
 import fs from 'node:fs';
 import os from 'node:os';
 import path from 'node:path';
@@ -391,6 +395,101 @@ createServer(async (req, res) => {
     );
     run(process.execPath, [path.join(dir, 'node_modules/typescript/bin/tsc'), '-p', '.'], { cwd: dir, stdio: 'inherit' });
     console.log('  typings: compile with skipLibCheck off, used as the README shows');
+  }
+
+  // The README-snippet check. Every block marked `<!-- compiled: name -->` in README.md and
+  // MIGRATING-2.0.md is compiled, strict, against the installed package; the ones named below
+  // must exist. MIGRATING-2.0's Express example is then run and answers preview, validate and
+  // import over HTTP. Express is installed here, in the scratch app, never by the package.
+  {
+    const REQUIRED = { 'README.md': ['functions', 'polling'], 'MIGRATING-2.0.md': ['express-example', 'template-route'] };
+    const dir = project('snippets', {
+      ...peers,
+      express: '^5',
+      '@types/express': '^5',
+      typescript: pkg.devDependencies.typescript,
+      '@types/node': pkg.devDependencies['@types/node'],
+    });
+    const files = [];
+    for (const [doc, required] of Object.entries(REQUIRED)) {
+      const text = fs.readFileSync(path.join(ROOT, doc), 'utf8').replace(/\r\n/g, '\n');
+      const blocks = [...text.matchAll(/<!-- compiled: ([\w-]+) -->\n```ts\n([\s\S]*?)\n```/g)];
+      const names = blocks.map(([, name]) => name);
+      for (const name of required) if (!names.includes(name)) throw new Error(`${doc} has no compiled snippet "${name}"`);
+      for (const [, name, code] of blocks) {
+        fs.writeFileSync(path.join(dir, `${name}.ts`), `${code}\n`);
+        files.push(`${name}.ts`);
+      }
+    }
+    fs.writeFileSync(
+      path.join(dir, 'tsconfig.json'),
+      JSON.stringify({
+        compilerOptions: { strict: true, noEmit: true, target: 'ES2022', module: 'ESNext', moduleResolution: 'bundler', esModuleInterop: true, types: ['node'], skipLibCheck: true },
+        files,
+      }),
+    );
+    run(process.execPath, [path.join(dir, 'node_modules/typescript/bin/tsc'), '-p', '.'], { cwd: dir, stdio: 'inherit' });
+    console.log(`  snippets: ${files.join(', ')} compile against the installed package`);
+
+    // The Express example, run.
+    await esbuild.build({ absWorkingDir: dir, entryPoints: ['express-example.ts'], outfile: 'express-example.mjs', format: 'esm', platform: 'node', logLevel: 'silent' });
+    const port = await new Promise(resolve => {
+      const probe = net.createServer().listen(0, () => {
+        const { port: free } = probe.address();
+        probe.close(() => resolve(free));
+      });
+    });
+    const server = spawn(process.execPath, ['express-example.mjs'], { cwd: dir, env: { ...process.env, PORT: String(port) }, stdio: ['ignore', 'inherit', 'inherit'] });
+    try {
+      const base = `http://127.0.0.1:${port}/import/people`;
+      for (let i = 0; ; i++) {
+        try {
+          await fetch(base);
+          break;
+        } catch (error) {
+          if (i > 100) throw error;
+          await new Promise(resolve => setTimeout(resolve, 100));
+        }
+      }
+      const csv = 'Name,Born\r\nAda,1815-12-10\r\nAlan,1912-06-23\r\nGrace,not a date\r\n';
+      const plan = JSON.stringify({ planVersion: 2, target: 'people', entries: [{ ref: 'name', column: 0 }, { ref: 'born', column: 1 }] });
+      const post = async (route, withPlan = true, planText = plan) => {
+        const form = new FormData();
+        if (withPlan) form.append('plan', planText);
+        form.append('file', new Blob([csv]), 'people.csv');
+        const response = await fetch(`${base}/${route}`, { method: 'POST', body: form });
+        return { status: response.status, body: await response.json() };
+      };
+
+      const preview = await post('preview', false);
+      if (preview.status !== 200 || preview.body.headers.join() !== 'Name,Born' || preview.body.rowCount !== 3) {
+        throw new Error(`preview answered ${preview.status} ${JSON.stringify(preview.body)}`);
+      }
+      const validate = await post('validate');
+      if (validate.status !== 200 || validate.body.written !== false || validate.body.imported !== 2 || validate.body.failed !== 1) {
+        throw new Error(`validate answered ${validate.status} ${JSON.stringify(validate.body)}`);
+      }
+      const imported = await post('import');
+      if (imported.status !== 200 || imported.body.written !== true || imported.body.imported !== 2 || imported.body.errors[0]?.row !== 4) {
+        throw new Error(`import answered ${imported.status} ${JSON.stringify(imported.body)}`);
+      }
+      const badPlan = await post('import', true, 'not json');
+      if (badPlan.status !== 400 || badPlan.body.error.code !== 'INVALID_PLAN') {
+        throw new Error(`a bad plan answered ${badPlan.status} ${JSON.stringify(badPlan.body)}`);
+      }
+      const binary = await (async () => {
+        const form = new FormData();
+        form.append('file', new Blob([new Uint8Array([0x89, 0x50, 0x4e, 0x47, 0x0d, 0x0a, 0x1a, 0x0a, 0, 0, 0, 0x0d])]), 'people.csv');
+        const response = await fetch(`${base}/preview`, { method: 'POST', body: form });
+        return { status: response.status, body: await response.json() };
+      })();
+      if (binary.status !== 415 || binary.body.error.code !== 'UNSUPPORTED_FORMAT') {
+        throw new Error(`a PNG answered ${binary.status} ${JSON.stringify(binary.body)}`);
+      }
+      console.log('  MIGRATING-2.0 Express example: preview, validate and import answer over HTTP; a bad plan 400, a PNG 415');
+    } finally {
+      server.kill();
+    }
   }
 
   console.log('Consumer verification passed.');

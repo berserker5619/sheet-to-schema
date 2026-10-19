@@ -32,7 +32,9 @@ Before submitting a pull request, ensure all gates pass:
 - `npm run test` (Jest unit and acceptance tests)
 - `npm run test:coverage` (enforces coverage thresholds)
 - `npm run check:timezones` (tests dates in 6 distinct UTC offsets)
-- `npm run check:consumer` (packs and installs tarball in scratch app)
+- `npm run check:consumer` (packs and installs the tarball in scratch apps; compiles every
+  `<!-- compiled: name -->` snippet in README.md and MIGRATING-2.0.md, and runs MIGRATING-2.0's
+  Express example over HTTP)
 - `npm run check:browser-runtime` (reads a CSV and a workbook through `/browser` on this Node;
   CI also runs it on Node 20.11 with `--expect-unsupported`)
 - `npm run check:browsers` (the built package in Chromium, Firefox and WebKit: `readCsvFile`
@@ -69,8 +71,9 @@ Users of 1.x install it with `npm install sheet-to-schema@release-1.x` or a `^1.
 
 ## Working with Dynamic Entity
 
-Dynamic Entity depends on this package from npm, and its daily drift workflow tests it against
-`sheet-to-schema@latest` and `@next`. To run the same check against a local change before it is
+Dynamic Entity depends on this package from npm. Its daily drift workflow tests the newest
+version in the range it declares (blocking; `^1.3.0` for 3.x, served by the 1.x line) and
+`sheet-to-schema@latest` (non-blocking, an early warning for Dynamic Entity 4.0). To run the same check against a local change before it is
 published:
 
 ```bash
