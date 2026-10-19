@@ -46,7 +46,7 @@ A `v*` tag runs `.github/workflows/release.yml` from the tagged commit, and
 
 | Tag | Published under | Also moves |
 | --- | --- | --- |
-| `v1.*` (from the `1.x` branch) | `release-1.x` | nothing; `latest` and `next` belong to 2.x |
+| `v1.*` (from the `1.x` branch) | `release-1.x` | `latest`, only while it is an older 1.x; never `next` |
 | `v2+` prerelease, e.g. `v2.0.0-rc.1` | `next` | `latest`, only if it is itself a prerelease |
 | `v2+` stable, e.g. `v2.0.0` | `latest` | `next`, if it points at an older version |
 
@@ -62,8 +62,9 @@ A `v*` tag runs `.github/workflows/release.yml` from the tagged commit, and
    `CHANGELOG.md` on the `1.x` branch.
 3. Run every gate above, then merge to `1.x` through a pull request and wait for CI to pass.
 4. Tag the merge commit on `1.x` (`git tag v1.3.1 && git push origin v1.3.1`). The release
-   publishes it under `release-1.x`; check with `npm view sheet-to-schema dist-tags` that
-   `latest` and `next` did not move.
+   publishes it under `release-1.x`, and moves `latest` to it only while `latest` is an older
+   1.x. Check with `npm view sheet-to-schema dist-tags` that `next` did not move, and that
+   `latest` moved only then.
 
 Users of 1.x install it with `npm install sheet-to-schema@release-1.x` or a `^1.3.0` range.
 
