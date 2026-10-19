@@ -10,11 +10,15 @@ import type { RowProblemCode } from './problem-codes';
 
 /** One thing wrong with, or worth saying about, one record. */
 export interface ImportRowError {
-  /** The first of `rows`: the row the record started on, or the row of the cell. The header is row 1. */
+  /**
+   * The first of `rows`: the row the record started on, the row of the cell, or the row of the
+   * collected item the problem is in. The header is row 1.
+   */
   row: number;
   /**
    * v2, on a grouped record: the sheet rows the problem came from, ascending. Every row of the
-   * record for a problem with the record as a whole; the cell's own row for a cell that could
+   * record for a problem with the record as a whole; the item's own row for a problem inside
+   * one collected item (`<collect>.<i>…`, from 1.3); the cell's own row for a cell that could
    * not be read, or every row the same cell problem occurred on; and for rows that disagree,
    * the row the value was kept from, then each row carrying the other value.
    */

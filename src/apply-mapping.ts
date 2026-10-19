@@ -154,6 +154,19 @@ function mergeProblems(problems: ImportRowError[]): ImportRowError[] {
   return [...merged.values()];
 }
 
+/**
+ * The sheet row of the collected item a problem's ref is inside (`<collect>.<i>` or deeper), or
+ * `undefined` for a problem with the record as a whole, the array itself included.
+ */
+function itemRowOf(ref: string, itemRows: ReadonlyMap<string, readonly number[]>): number | undefined {
+  for (const [array, rows] of itemRows) {
+    if (!ref.startsWith(`${array}.`)) continue;
+    const index = /^(\d+)(?:\.|$)/.exec(ref.slice(array.length + 1));
+    if (index) return rows[Number(index[1])];
+  }
+  return undefined;
+}
+
 /** What one call of a mapping session produced: finished records, and the rows behind them. @internal */
 export interface MappingBatch {
   records: Record<string, unknown>[];
@@ -300,8 +313,11 @@ export function startMapping<TMeta, TCtx>(
 
   /**
    * Finalize and judge one record. In a grouped record a problem with the whole record carries
-   * every row it came from, and a cell that could not be read carries its own. A warning
-   * arrives with its rows already on it.
+   * every row it came from, a problem inside one collected item carries that item's row (1.3),
+   * and a cell that could not be read carries its own. A warning arrives with its rows already
+   * on it.
+   *
+   * `itemRows` holds, per collected array, the sheet row each of its items came from, by index.
    *
    * `unread` holds the refs whose cell could not be read. Such a target is absent from the
    * record, but it is not one nobody filled in, so it is not reported as required as well
@@ -313,8 +329,13 @@ export function startMapping<TMeta, TCtx>(
     cellErrors: ImportRowError[],
     recordWarnings: ImportRowError[],
     unread: ReadonlySet<string>,
+    itemRows: ReadonlyMap<string, readonly number[]> = new Map(),
   ): void => {
-    const ofRecord = (problem: ImportRowError): ImportRowError => (group ? { ...problem, row: rowNumbers[0], rows: rowNumbers } : problem);
+    const ofRecord = (problem: ImportRowError): ImportRowError => {
+      if (!group) return problem;
+      const row = itemRowOf(problem.ref, itemRows);
+      return row === undefined ? { ...problem, row: rowNumbers[0], rows: rowNumbers } : { ...problem, row, rows: [row] };
+    };
     const ofCell = (problem: ImportRowError): ImportRowError => (group ? { ...problem, rows: [problem.row] } : problem);
     const finished = adapter.finalize ? adapter.finalize(record, ctx) : record;
     const problems = (adapter.validate ? adapter.validate(finished, ctx) : validateRecord(finished, set)).filter(
@@ -376,18 +397,23 @@ export function startMapping<TMeta, TCtx>(
       }
     }
     const unread = new Set(members.flatMap(member => member.unread));
+    const itemRows = new Map<string, number[]>();
     for (const array of collected) {
-      // Not de-duplicated: two identical line items are two items. An all-blank item is no item.
+      // Not de-duplicated: two identical line items are two items. An all-blank item is no item,
+      // and takes no index, so `rows[i]` is the row of `items[i]` whatever blanks came between.
       const items: Record<string, unknown>[] = [];
+      const rows: number[] = [];
       for (const member of members) {
         const item = member.items.get(array);
         if (!item || isEmptyValue(item)) continue;
         for (const path of member.unreadInItem.get(array) ?? []) unread.add(`${array}.${items.length}.${path}`);
         items.push(item);
+        rows.push(member.rowNumber);
       }
       if (items.length) setRecordValue(record, array, items);
+      itemRows.set(array, rows);
     }
-    finish(record, rowNumbers, members.flatMap(member => member.errors), recordWarnings, unread);
+    finish(record, rowNumbers, members.flatMap(member => member.errors), recordWarnings, unread, itemRows);
   };
 
   const accumulator = group ? new GroupAccumulator<MappedRow>(group, resolveGroupLimits(options.groupLimits)) : null;

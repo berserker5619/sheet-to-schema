@@ -11,6 +11,7 @@ import type { RecordProblem } from './adapter.types';
 import { applyMapping, type ApplyMappingOptions } from './apply-mapping';
 import { DEFAULT_GROUP_LIMITS } from './group-limits';
 import { ImportFailure } from './import-failure';
+import { jsonSchemaAdapter } from './json-schema-adapter';
 import type { ImportResult } from './result.types';
 
 const ctx = { calls: [] as string[] };
@@ -228,12 +229,12 @@ describe('grouping (§5)', () => {
       ]);
     });
 
-    it('merges the same item-cell failure on two rows, and leaves a record-level problem on every row', () => {
+    it("merges the same item-cell failure on two rows, and reports an item's own problem on its row (1.3)", () => {
       const result = run([['A', '', 'S1', 'one'], ['A', '', 'S2', 'one'], ['A', '', '', '2']], dated);
       expect(problems(result)).toEqual([
         { row: 2, rows: [2, 3], ref: 'items.qty', code: 'CELL_FORMAT' },
-        // The third row's item has a qty and no sku at all.
-        { row: 2, rows: [2, 3, 4], ref: 'items.2.sku', code: 'RECORD_REQUIRED' },
+        // The third row's item has a qty and no sku at all. 1.2 put it on every row of the group.
+        { row: 4, rows: [4], ref: 'items.2.sku', code: 'RECORD_REQUIRED' },
       ]);
     });
 
@@ -245,7 +246,7 @@ describe('grouping (§5)', () => {
       expect(problems(result)).toEqual([
         { row: 3, rows: [3], ref: 'items.sku', code: 'CELL_FORMAT' },
         // Row 4 said nothing in its sku cell, which is what required means.
-        { row: 2, rows: [2, 3, 4], ref: 'items.2.sku', code: 'RECORD_REQUIRED' },
+        { row: 4, rows: [4], ref: 'items.2.sku', code: 'RECORD_REQUIRED' },
       ]);
     });
 
@@ -330,7 +331,75 @@ describe('grouping (§5)', () => {
       ['A', '', '', '2'],
       ['A', '', 'S2', '1'],
     ]);
-    expect(result.errors).toEqual([expect.objectContaining({ ref: 'items.0.sku', code: 'RECORD_REQUIRED', rows: [2, 3] })]);
+    // On the row the item came from (1.3), not on every row of the group.
+    expect(result.errors).toEqual([expect.objectContaining({ ref: 'items.0.sku', code: 'RECORD_REQUIRED', row: 2, rows: [2] })]);
+  });
+
+  describe('which row a problem of a grouped record names (1.3)', () => {
+    const rowsOf = (result: ImportResult) => result.errors.map(({ row, rows, ref, code }) => ({ row, rows, ref, code }));
+    /** An adapter whose validate reports exactly `refs`, so each kind of ref can be asked about. */
+    const reporting = (...refs: string[]) =>
+      ordersAdapter({ validate: () => refs.map(ref => ({ ref, code: 'RECORD_RULE' as const, message: `about ${ref}` })) });
+
+    it('names the true row of an item that comes after a blank item row', () => {
+      // Row 3 has the key and nothing else: no item, and no index. The second item is row 4's.
+      const result = run([['A', '', 'S1', '1'], ['A', '', '', ''], ['A', '', '', '3']]);
+      expect(rowsOf(result)).toEqual([{ row: 4, rows: [4], ref: 'items.1.sku', code: 'RECORD_REQUIRED' }]);
+    });
+
+    it('names the true row after a blank sheet row inside the group', () => {
+      const result = run([['A', '', 'S1', '1'], ['', '', '', ''], ['A', '', '', '3']]);
+      expect(rowsOf(result)).toEqual([{ row: 4, rows: [4], ref: 'items.1.sku', code: 'RECORD_REQUIRED' }]);
+    });
+
+    it("names each item's own row, deeper refs too, and keeps a record problem on every row", () => {
+      const result = run([['A', '', 'S1', '1'], ['A', '', 'S2', '2'], ['A', '', 'S3', '3']], plan(), reporting('items.2.sku', 'items.0', 'items.1.dims.width', 'customer.email', 'items', ''));
+      expect(rowsOf(result)).toEqual([
+        { row: 4, rows: [4], ref: 'items.2.sku', code: 'RECORD_RULE' },
+        { row: 2, rows: [2], ref: 'items.0', code: 'RECORD_RULE' },
+        { row: 3, rows: [3], ref: 'items.1.dims.width', code: 'RECORD_RULE' },
+        // The record, the array as a whole, and no ref at all: the group's first row and all its rows.
+        { row: 2, rows: [2, 3, 4], ref: 'customer.email', code: 'RECORD_RULE' },
+        { row: 2, rows: [2, 3, 4], ref: 'items', code: 'RECORD_RULE' },
+        { row: 2, rows: [2, 3, 4], ref: '', code: 'RECORD_RULE' },
+      ]);
+    });
+
+    it('keeps a ref that only looks like an item on every row: no index, an index past the items, another array', () => {
+      const result = run([['A', '', 'S1', '1'], ['A', '', 'S2', '2']], plan(), reporting('items.first.sku', 'items.7.sku', 'itemsCount', 'phones.0.number'));
+      expect(rowsOf(result).map(({ ref, rows }) => [ref, rows])).toEqual([
+        ['items.first.sku', [2, 3]],
+        ['items.7.sku', [2, 3]],
+        ['itemsCount', [2, 3]],
+        ['phones.0.number', [2, 3]],
+      ]);
+    });
+
+    it('names the item row of an array collected at a nested ref', () => {
+      const nested = jsonSchemaAdapter({
+        $id: 'orders',
+        type: 'object',
+        properties: {
+          orderId: { type: 'string' },
+          order: { type: 'object', properties: { items: { type: 'array', items: { type: 'object', required: ['sku'], properties: { sku: { type: 'string' }, qty: { type: 'integer' } } } } } },
+        },
+      } as never);
+      const p = {
+        planVersion: 2,
+        target: 'orders',
+        entries: [{ ref: 'orderId', column: 0 }, { ref: 'order.items.sku', column: 2 }, { ref: 'order.items.qty', column: 3 }],
+        group: { key: [0], collect: ['order.items'] },
+      };
+      const result = applyMapping([['A', '', 'S1', '1'], ['A', '', '', ''], ['A', '', '', '2']], p, nested, undefined);
+      expect(result.planProblems).toEqual([]);
+      expect(rowsOf(result)).toEqual([{ row: 4, rows: [4], ref: 'order.items.1.sku', code: 'RECORD_REQUIRED' }]);
+    });
+
+    it('leaves an ungrouped record as it was: its one row, and no rows', () => {
+      const ungrouped = { planVersion: 2, target: 'orders', entries: [{ ref: 'orderId', column: 0 }, { ref: 'customer.email', column: 1 }] };
+      const result = applyMapping([['', 'a@example.com']], ungrouped, ordersAdapter(), ctx);
+      expect(result.errors.map(({ row, rows, ref }) => ({ row, rows, ref }))).toEqual([{ row: 2, rows: undefined, ref: 'orderId' }]);
+    });
   });
 });
 

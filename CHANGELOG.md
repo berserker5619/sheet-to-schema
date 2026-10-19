@@ -6,6 +6,29 @@ This project follows [Semantic Versioning](https://semver.org/spec/v2.0.0.html).
 
 ---
 
+## [1.3.0-rc.1]
+
+Found by Dynamic Entity's 3.1 tests (B1, its docs/3.1-spec.md): in a grouped record, a
+problem inside one collected item was reported on the group's first row, carrying every row of
+the group. In a 40-row order, the user had to find the bad item themselves.
+
+### Changed
+
+- **Grouped item problems now report the item's row.** A record-level problem whose `ref` is
+  inside a collected item (`<collect>.<i>`, or deeper, such as `items.2.sku` being required) has
+  `row` set to the sheet row that item came from, and `rows: [that row]`. Before, it was the
+  group's first row and all its rows. This holds with blank item rows in the group, which take
+  no index, and for an array collected at a nested ref (`order.items.1.sku`). It holds in
+  `applyMapping` and in `runImport` at every batch size.
+- A problem with the record as a whole is unchanged: the group's first row, with all its rows.
+  That includes one about the array itself (`items`), a ref with no index or an index past the
+  items, and `''`. Cell problems are unchanged.
+- It is a minor release, because a client that read `rows` as "the group" for an item problem
+  now sees one row. Three 1.2 tests pinned the old rows and are updated to the new ones.
+  Everything else passes unchanged.
+
+---
+
 ## [1.2.0]
 
 What Dynamic Entity's 3.1 Step 0 check found about bundled apps without `exceljs` installed

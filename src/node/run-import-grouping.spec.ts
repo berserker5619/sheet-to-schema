@@ -62,6 +62,9 @@ const GROUPING_FIXTURES: Record<string, string[][]> = {
   'a failed row fails its record': [['A', '', 'S1', '1'], ['A', '', 'S2', 'two'], ['B', '', 'S3', '1'], ['B', 'not-an-email', 'S4', '1']],
   'identical and all-blank items': [['A', '', 'S1', '1'], ['A', '', 'S1', '1'], ['A', 'a@example.com', '', '']],
   'a blank row inside a group': [['A', '', 'S1', '1'], ['', '', '', ''], ['A', '', 'S2', '1'], ['', '', '', ''], ['B', '', 'S3', '1']],
+  // 1.3: an item's own problem names its row, also when a group straddles a batch.
+  'an item problem on its own row': [['A', '', 'S1', '1'], ['A', '', 'S2', '2'], ['A', '', '', '3'], ['B', '', '', '1'], ['B', '', 'S5', '1']],
+  'a blank item row between two items': [['A', '', 'S1', '1'], ['A', '', '', ''], ['A', '', '', '3'], ['B', 'b@example.com', 'S4', '1']],
 };
 
 const csvOf = (rows: string[][], header = HEADER): string =>
@@ -154,6 +157,15 @@ describe('runImport groups exactly as applyMapping does', () => {
       expect(comparable(records, result)).toEqual(comparable(expected.records, expected));
       expect(result.rowsInImported + result.skipped + result.failed).toBe(result.rowsRead);
     });
+  });
+
+  it('names the item rows the 1.3 fixtures are about, so the parity above is about them', () => {
+    const named = (name: string) => inMemory(CASES.find(c => c.name === name) as Case).errors.map(({ row, rows, ref }) => ({ row, rows, ref }));
+    expect(named('an item problem on its own row')).toEqual([
+      { row: 4, rows: [4], ref: 'items.2.sku' },
+      { row: 5, rows: [5], ref: 'items.0.sku' },
+    ]);
+    expect(named('a blank item row between two items')).toEqual([{ row: 4, rows: [4], ref: 'items.1.sku' }]);
   });
 
   it('gives identical results for the order fixture as CSV and as .xlsx', async () => {
