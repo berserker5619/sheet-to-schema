@@ -53,6 +53,12 @@ export type ImportErrorCode =
   /** The consumer's `onBatch` threw. Nothing about *why* crosses the wire. */
   | 'IMPORT_FAILED'
   /**
+   * `runImport`'s `signal` aborted (2.0). `details` holds `rowsRead`, `imported` and `failed` as
+   * they stood when it stopped, and `cause` the signal's `reason`, so a timeout
+   * (`AbortSignal.timeout`) can be told from a cancel.
+   */
+  | 'ABORTED'
+  /**
    * The browser reader runs where a workbook cannot be read: no `DecompressionStream` with the
    * `deflate-raw` format. Raised by `sheet-to-schema/browser` only, never by the server.
    */
@@ -79,6 +85,8 @@ const STATUS: Record<ImportErrorCode, number> = {
   INVALID_PLAN: 400,
   TIMEOUT: 408,
   IMPORT_FAILED: 500,
+  // "Client closed request": the caller stopped the run, so the server did not fail.
+  ABORTED: 499,
   // Not an HTTP answer: only the browser reader raises it. 501 if one ever has to be chosen.
   UNSUPPORTED_RUNTIME: 501,
   PEER_MISSING: 500,

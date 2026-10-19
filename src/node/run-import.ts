@@ -22,6 +22,11 @@
  * (`batchSize`, `maxGroupRows`, `maxGroups` and `maxGroupKeyBytes`); past one, or when a closed
  * key comes back, the run stops with the engine's `ImportFailure`. Non-contiguous grouping
  * would hold every group to the end, so it is refused before a row is read either way.
+ *
+ * **A run can be stopped, and watched** (2.0; docs/2.0-spec.md, §2.1). `signal` stops reading at
+ * once and starts no new batch, but never interrupts an `onBatch` that is running: a batch half
+ * written is the one outcome worse than a batch not written. `onProgress` is told the bytes and
+ * rows read after each batch, for a job that reports `bytesRead / size`.
  */
 
 import {
@@ -38,7 +43,7 @@ import {
   type PlanProblem,
   type SchemaAdapter,
 } from 'sheet-to-schema';
-import { destroySource, type ByteSource } from './bytes';
+import { destroySource, toByteStream, type ByteSource } from './bytes';
 import { ImportError } from './errors';
 import { resolveLimits, type ImportLimits } from './limits';
 import { readSheet, type SheetFormat } from './read-sheet';
@@ -68,6 +73,14 @@ export interface BatchInfo {
  */
 export type OnBatch = (records: Record<string, unknown>[], info: BatchInfo) => void | Promise<void>;
 
+/** How far a run has got, for `onProgress`. */
+export interface ImportProgress {
+  /** Bytes consumed from the input so far. The input's size once the run has finished. */
+  bytesRead: number;
+  /** Data rows read so far. The result's `rowsRead` once the run has finished. */
+  rowsRead: number;
+}
+
 export interface RunImportOptions<TMeta = unknown, TCtx = unknown> {
   stream: ByteSource;
   /** Display only, and a delimiter hint. The format is decided by the file's first bytes, never by its name. */
@@ -95,6 +108,21 @@ export interface RunImportOptions<TMeta = unknown, TCtx = unknown> {
    */
   grouping?: boolean;
   limits?: Partial<ImportLimits>;
+  /**
+   * Stops the run (2.0). Already aborted: nothing is read. Aborted during the run: reading stops
+   * at once and no new batch starts; an `onBatch` already running is waited for, never
+   * interrupted. Either way the source is destroyed and the run rejects with `ImportError`
+   * `ABORTED`, whose `details` are the counts so far (`rowsRead`, `imported`, `failed`) and whose
+   * `cause` is the signal's `reason`. Bound a run's time with `AbortSignal.timeout(ms)`.
+   */
+  signal?: AbortSignal;
+  /**
+   * Told the bytes and rows read so far (2.0): at most once per batch, after its `onBatch` has
+   * settled, and once when the run finishes, when `bytesRead` is the input's size and `rowsRead`
+   * the result's. Values never decrease. Never awaited; anything it throws or rejects with is
+   * ignored and does not affect the run. A plan refused before a row is read reports nothing.
+   */
+  onProgress?: (progress: ImportProgress) => void;
 }
 
 export interface ImportRunResult {
@@ -147,9 +175,28 @@ export const GROUPING_NOT_STREAMED =
 export const NON_CONTIGUOUS_NOT_STREAMED =
   'This server groups rows only when each group\'s rows are together. Sort the sheet by the key columns and set "contiguous" to true, or import this file in the browser, which can gather them.';
 
+/** Counts the bytes a source gives up as they are pulled, for `onProgress`. */
+async function* counting(source: ByteSource, count: (bytes: number) => void): AsyncGenerator<Uint8Array> {
+  for await (const chunk of toByteStream(source)) {
+    count(chunk.byteLength);
+    yield chunk;
+  }
+}
+
+/** The rejection for a run its signal stopped. */
+function abortedWith(signal: AbortSignal, counts: { rowsRead: number; imported: number; failed: number }): ImportError {
+  return new ImportError('ABORTED', 'The import was cancelled.', { cause: signal.reason, details: counts });
+}
+
 export async function runImport<TMeta, TCtx>(options: RunImportOptions<TMeta, TCtx>): Promise<ImportRunResult> {
   const limits = resolveLimits(options.limits);
-  const { adapter, ctx, onBatch } = options;
+  const { adapter, ctx, onBatch, signal, onProgress } = options;
+
+  if (signal?.aborted) {
+    // Not a byte read. The source is still open, and an undrained socket is a leaked handle.
+    destroySource(options.stream);
+    throw abortedWith(signal, { rowsRead: 0, imported: 0, failed: 0 });
+  }
 
   // The plan is checked before a single row is read. A plan naming a field the schema does
   // not have is wrong about every row, so discovering it at row 30,000 of a file that has
@@ -186,7 +233,27 @@ export async function runImport<TMeta, TCtx>(options: RunImportOptions<TMeta, TC
     throw new ImportError('INVALID_PLAN', message, { details: [...prepared.problems, problem] });
   }
 
-  const sheet = await readSheet({ stream: options.stream, filename: options.filename, limits });
+  // One listener for the whole run, never a race per row: a reaction attached to a long-lived
+  // promise for every pull is never released (see `xlsx-source.ts`). Destroying the source is
+  // what stops a read that is waiting on it; the flag is what every row and batch checks.
+  let aborted = false;
+  const onAbort = (): void => {
+    aborted = true;
+    destroySource(options.stream);
+  };
+  signal?.addEventListener('abort', onAbort, { once: true });
+
+  let bytesRead = 0;
+  const source = onProgress ? counting(options.stream, bytes => (bytesRead += bytes)) : options.stream;
+
+  let sheet: Awaited<ReturnType<typeof readSheet>>;
+  try {
+    sheet = await readSheet({ stream: source, filename: options.filename, limits });
+  } catch (error) {
+    signal?.removeEventListener('abort', onAbort);
+    destroySource(options.stream);
+    throw aborted && signal ? abortedWith(signal, { rowsRead: 0, imported: 0, failed: 0 }) : error;
+  }
 
   const decimal = options.decimal ?? decimalMarkFor(sheet.delimiter);
   const session = startMapping(prepared.plan, adapter, ctx, {
@@ -204,6 +271,20 @@ export async function runImport<TMeta, TCtx>(options: RunImportOptions<TMeta, TC
   let rowsInImported = 0;
   let rowsRead = 0;
   let batchIndex = 0;
+
+  /** Never awaited, and nothing it does reaches the run. */
+  const report = (): void => {
+    if (!onProgress) return;
+    try {
+      const returned = onProgress({ bytesRead, rowsRead }) as unknown;
+      if (returned && typeof (returned as PromiseLike<unknown>).then === 'function') {
+        (returned as PromiseLike<unknown>).then(undefined, () => undefined);
+      }
+    } catch {
+      // A progress callback that fails is the caller's to notice; the import goes on.
+    }
+  };
+  const stopped = (): ImportError => abortedWith(signal as AbortSignal, { rowsRead, imported, failed });
 
   let batch: unknown[][] = [];
   /** The spreadsheet row number of `batch[0]`. The header is row 1. */
@@ -268,18 +349,32 @@ export async function runImport<TMeta, TCtx>(options: RunImportOptions<TMeta, TC
 
   try {
     for await (const row of sheet.rows) {
+      if (aborted) break;
       rowsRead++;
       batch.push(row as unknown[]);
-      if (batch.length >= limits.batchSize) await flush(false);
+      if (batch.length >= limits.batchSize) {
+        await flush(false);
+        // The batch that was running has finished; no new one starts.
+        if (aborted) break;
+        report();
+      }
     }
+    if (aborted) throw stopped();
     await flush(true);
+    if (aborted) throw stopped();
   } catch (error) {
     // A failure anywhere — a limit, a malformed file, the consumer's own writer — leaves the
     // request body half-read. Destroying it is what stops a hostile uploader from holding a
     // socket open after the guard that refused them has already fired.
     destroySource(options.stream);
-    throw error;
+    // An abort makes the read it interrupted fail, and that is the abort's doing. A writer that
+    // failed is not: that is the more important fact, and is reported as itself.
+    const own = error instanceof ImportError && (error.code === 'IMPORT_FAILED' || error.code === 'ABORTED');
+    throw aborted && !own ? stopped() : error;
+  } finally {
+    signal?.removeEventListener('abort', onAbort);
   }
+  report();
 
   return {
     imported,
