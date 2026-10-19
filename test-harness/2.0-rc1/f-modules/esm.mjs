@@ -1,0 +1,10 @@
+import { createRequire } from 'node:module';
+import { readFileSync } from 'node:fs';
+const require = createRequire(import.meta.url);
+globalThis.require_assert = () => require('node:assert/strict');
+globalThis.require_fs = () => require('node:fs');
+const main = await import('sheet-to-schema');
+const node = await import('sheet-to-schema/node');
+for (const id of ['sheet-to-schema', 'sheet-to-schema/node', 'sheet-to-schema/browser']) if (!import.meta.resolve(id).endsWith('.mjs')) throw new Error(id + ' did not resolve to ESM');
+const body = (0, eval)(`(${readFileSync('shared.body.js', 'utf8').replace(/^\/\/.*\n/, '').replace(/^async function body/, 'async function')})`);
+await body(main, node, 'ESM');
