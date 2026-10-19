@@ -100,47 +100,12 @@ jobs:
             esac
           fi
 
+      # Tag selection lives in the script so scripts/check-release-tags.mjs can prove it:
+      # v1.* publishes under release-1.x and never moves latest or next; a v2+ prerelease goes
+      # to next; a v2+ stable goes to latest and moves next up to it.
       - name: Publish sheet-to-schema
         if: ${{ github.event_name == 'push' || github.event.inputs.dry_run != 'true' }}
-        run: |
-          VERSION=$(node -p "require('./package.json').version")
-          TAG=$(node -p "require('./package.json').version.includes('-') ? 'next' : 'latest'")
-          if npm view "sheet-to-schema@$VERSION" version >/dev/null 2>&1; then
-            echo "sheet-to-schema@$VERSION is already published — skipping."
-          else
-            npm publish --access public --tag "$TAG" --provenance --loglevel verbose
-            if [ "$TAG" = "next" ]; then
-              CURRENT_LATEST=$(npm view sheet-to-schema dist-tags.latest 2>/dev/null || true)
-              case "$CURRENT_LATEST" in
-                *-*)
-                  echo "sheet-to-schema latest dist-tag is a prerelease ($CURRENT_LATEST) — advancing latest to $VERSION."
-                  if ! npm dist-tag add "sheet-to-schema@$VERSION" latest; then
-                    echo "::warning::Could not update 'latest' dist-tag via trusted publishing (OIDC token may lack dist-tag permissions)."
-                    echo "::warning::To update manually, run: npm dist-tag add sheet-to-schema@$VERSION latest"
-                  fi
-                  ;;
-                *)
-                  echo "sheet-to-schema latest dist-tag is stable ($CURRENT_LATEST) — leaving latest unchanged."
-                  ;;
-              esac
-            else
-              # A stable release goes out as `latest`. `next` is moved up to it when it points at
-              # an older version, so `npm install sheet-to-schema@next` never installs something
-              # older than `latest`. A `next` that is already ahead (a newer prerelease) is left.
-              CURRENT_NEXT=$(npm view sheet-to-schema dist-tags.next 2>/dev/null || true)
-              if [ -z "$CURRENT_NEXT" ]; then
-                echo "sheet-to-schema has no next dist-tag — nothing to move."
-              elif node scripts/semver-lt.mjs "$CURRENT_NEXT" "$VERSION"; then
-                echo "sheet-to-schema next dist-tag ($CURRENT_NEXT) is older than $VERSION — advancing next to $VERSION."
-                if ! npm dist-tag add "sheet-to-schema@$VERSION" next; then
-                  echo "::warning::Could not update 'next' dist-tag via trusted publishing (OIDC token may lack dist-tag permissions)."
-                  echo "::warning::To update manually, run: npm dist-tag add sheet-to-schema@$VERSION next"
-                fi
-              else
-                echo "sheet-to-schema next dist-tag ($CURRENT_NEXT) is not older than $VERSION — leaving next unchanged."
-              fi
-            fi
-          fi
+        run: node scripts/release-publish.mjs
 
       - name: Pack only (dry run)
         if: ${{ github.event_name == 'workflow_dispatch' && github.event.inputs.dry_run == 'true' }}
