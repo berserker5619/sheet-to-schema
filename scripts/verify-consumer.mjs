@@ -194,12 +194,12 @@ try {
 } finally {
   people.server.close();
 }
-// A grouped plan, streamed by runImport.
+// A grouped plan, streamed by runImport, which groups by default from 2.0.
 const orders = jsonSchemaAdapter({
   type: 'object',
   properties: { orderId: { type: 'string' }, items: { type: 'array', items: { type: 'object', properties: { sku: { type: 'string' } } } } },
 });
-const grouping = serve(orders, { grouping: true });
+const grouping = serve(orders);
 try {
   const form = new FormData();
   form.append('plan', JSON.stringify({ planVersion: 2, target: 'orders', entries: [{ ref: 'orderId', column: 0 }, { ref: 'items.sku', column: 1 }], group: { key: [0], collect: ['items'] } }));
@@ -214,7 +214,7 @@ try {
 } finally {
   grouping.server.close();
 }
-console.log('  peers: exceljs reads a workbook; busboy receives an upload on node:http, imported flat and grouped by runImport');
+console.log('  peers: exceljs reads a workbook; busboy receives an upload on node:http, imported flat, and grouped by runImport by default');
 `,
   );
 

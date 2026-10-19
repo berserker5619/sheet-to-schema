@@ -13,9 +13,9 @@
  *   every row fails is otherwise as large as the file;
  * - the plan is checked before a single row is read.
  *
- * **Grouping streams, when it is turned on** (`grouping: true`; docs/1.1-spec.md, B). Off, the
- * default in 1.1, a plan with `group` is refused before a row is read, exactly as 1.0 refused it:
- * Dynamic Entity 3.0 relies on that refusal. On, rows go through the main entry's mapping session,
+ * **Grouping streams** (docs/1.1-spec.md, B), on by default from 2.0 (docs/2.0-spec.md, D4).
+ * `grouping: false` refuses a plan with `group` before a row is read, exactly as 1.0 refused it
+ * and as 1.x did by default. On, rows go through the main entry's mapping session,
  * the one `applyMapping` runs on, so a grouped file gives the same records here as in memory.
  * A group that straddles a batch boundary is carried into the next batch and handed to
  * `onBatch` whole. Peak memory is the batch, the open group and the closed keys, each bounded
@@ -103,8 +103,10 @@ export interface RunImportOptions<TMeta = unknown, TCtx = unknown> {
   /** Omit to validate without writing: the identical pipeline, every error, nothing stored. */
   onBatch?: OnBatch;
   /**
-   * Import a plan with `group` (contiguous groups only). Default `false`: such a plan is refused
-   * with `INVALID_PLAN` carrying `PLAN_GROUP` and `GROUPING_NOT_STREAMED`, as in 1.0.
+   * Import a plan with `group` (contiguous groups only). Default `true` from 2.0 (it was `false`
+   * in 1.x). `false` refuses such a plan with `INVALID_PLAN` carrying `PLAN_GROUP` (reason
+   * `grouping-disabled`) and `GROUPING_NOT_STREAMED`, as 1.x did by default. `contiguous: false`
+   * is refused either way (reason `non-contiguous`).
    */
   grouping?: boolean;
   limits?: Partial<ImportLimits>;
@@ -163,7 +165,7 @@ export interface ImportRunResult {
   format?: SheetFormat;
 }
 
-/** What a server tells a client whose plan groups rows, when grouping is not turned on (1.0's refusal). */
+/** What a server tells a client whose plan groups rows, when it runs with `grouping: false` (1.0's refusal). */
 export const GROUPING_NOT_STREAMED =
   'This server version does not group rows into records yet. The browser import does: import this file there, or remove "group" from the plan.';
 
@@ -221,14 +223,15 @@ export async function runImport<TMeta, TCtx>(options: RunImportOptions<TMeta, TC
     };
   }
 
-  if (prepared.plan.group && (!options.grouping || !prepared.plan.group.contiguous)) {
+  const grouping = options.grouping ?? true;
+  if (prepared.plan.group && (!grouping || !prepared.plan.group.contiguous)) {
     // Refused, not ignored: a runner that ignored `group` would import one record per row and
     // report success (spec §4, "Talking to an older server"), and one that ignored
     // `contiguous: false` would fail at the first key that comes back, after writing everything
     // before it.
     destroySource(options.stream);
-    const message = options.grouping ? NON_CONTIGUOUS_NOT_STREAMED : GROUPING_NOT_STREAMED;
-    const reason = options.grouping ? 'non-contiguous' : 'grouping-disabled';
+    const message = grouping ? NON_CONTIGUOUS_NOT_STREAMED : GROUPING_NOT_STREAMED;
+    const reason = grouping ? 'non-contiguous' : 'grouping-disabled';
     const problem: PlanProblem = { level: 'error', code: 'PLAN_GROUP', path: 'group', message, reason };
     throw new ImportError('INVALID_PLAN', message, { details: [...prepared.problems, problem] });
   }

@@ -140,10 +140,10 @@ result.warnings;
 Rows of a group that disagree on a parent field keep the first row's value and raise a
 **warning**: the record is still imported. A problem inside one collected item, such as
 `items.2.sku` being required, names that item's own row (from 1.3); a problem with the record
-as a whole names the group's first row and carries all its rows in `rows`. Grouping works in `applyMapping`. On the server it
-is opt-in in 1.1: `runImport` groups when given `grouping: true`, and
-give the same records as `applyMapping` (a group that straddles a batch is carried into the next
-one and written whole). Without it a grouped plan is refused, as in 1.0. The runner groups
+as a whole names the group's first row and carries all its rows in `rows`. Grouping works in `applyMapping`, and on the server
+`runImport` groups by default from 2.0, giving the same records as `applyMapping` (a group that
+straddles a batch is carried into the next one and written whole). With `grouping: false` a
+grouped plan is refused, as 1.x did by default. The runner groups
 contiguous rows only (sort the sheet by the key columns); `contiguous: false` works in
 `applyMapping` and is refused by the runner, since it would hold every group to the end of the
 file.

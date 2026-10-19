@@ -5,6 +5,7 @@
 import ExcelJS from 'exceljs';
 import JSZip from 'jszip';
 import { failureOf, serverGrid } from './parity.fixtures';
+import { BINARY_MESSAGE } from '../sheet-format';
 import { readSheet } from '../node/read-sheet';
 import { readSheetFile, readXlsx, type BrowserLimits } from './read-sheet-file';
 
@@ -117,15 +118,15 @@ describe('formats: refused as the server refuses, read as the server reads', () 
     expect(await browserFailure(bytes)).toEqual(expected);
   });
 
-  it('reads a random binary that is not a zip as CSV, into exactly the server\'s grid', async () => {
+  it('refuses a random binary that is not a zip, as the server does (2.0: it was read as CSV)', async () => {
     // Deterministic noise: a linear congruential sequence, not starting with "PK".
     const bytes = new Uint8Array(4096);
     let seed = 12345;
     for (let i = 0; i < bytes.length; i++) bytes[i] = (seed = (seed * 1103515245 + 12345) % 2 ** 31) & 0xff;
     bytes[0] = 0x01;
-    const read = await readSheetFile(bytes);
-    expect(read.format).toBe('csv');
-    expect(read).toEqual(await serverGrid(bytes));
+    const expected = await serverFailure(bytes);
+    expect(expected).toEqual({ code: 'UNSUPPORTED_FORMAT', message: BINARY_MESSAGE });
+    expect(await browserFailure(bytes)).toEqual(expected);
   });
 
   it('reads an empty file as the server does: no headers and no rows', async () => {

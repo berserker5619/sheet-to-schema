@@ -1,0 +1,1673 @@
+{
+ "version": "1.3.0",
+ "grids": {
+  "order/sample.csv": {
+   "format": "csv",
+   "node": {
+    "headers": [
+     "Order ID",
+     "Order Date",
+     "Customer Name",
+     "Customer Email",
+     "Phone 1 Type",
+     "Phone 1 Number",
+     "Phone 2 Type",
+     "Phone 2 Number",
+     "Street",
+     "City",
+     "Pincode",
+     "Tags",
+     "SKU",
+     "Product",
+     "Qty",
+     "Unit Price",
+     "Payment Method",
+     "Paid"
+    ],
+    "rows": [
+     [
+      "NF-1001",
+      "05/09/2026",
+      "Divya S",
+      "divya@example.com",
+      "mobile",
+      "98400 11111",
+      "whatsapp",
+      "98400 22222",
+      "12 Anna Salai",
+      "Chennai",
+      "600002",
+      "festive; cotton",
+      "KUR-RED-M",
+      "Red cotton kurti",
+      "2",
+      "549",
+      "UPI",
+      "Yes"
+     ],
+     [
+      "NF-1001",
+      "05/09/2026",
+      "Divya S",
+      "divya@example.com",
+      "mobile",
+      "98400 11111",
+      "whatsapp",
+      "98400 22222",
+      "12 Anna Salai",
+      "Chennai",
+      "600002",
+      "festive; cotton",
+      "DUP-GLD",
+      "Gold dupatta",
+      "1",
+      "299",
+      "UPI",
+      "Yes"
+     ],
+     [
+      "NF-1002",
+      "06/09/2026",
+      "Rahul K",
+      "rahul.k@example",
+      "mobile",
+      "99620 33333",
+      "",
+      "",
+      "4 MG Road",
+      "Bengaluru",
+      "560001",
+      "casual",
+      "SHR-BLU-L",
+      "Blue linen shirt",
+      "1",
+      "799",
+      "COD",
+      "No"
+     ],
+     [
+      "NF-1003",
+      "07/09/2026",
+      "Fathima R",
+      "fathima@example.com",
+      "mobile",
+      "90030 44444",
+      "home",
+      "044 2345 6789",
+      "7 Beach Road",
+      "Chennai",
+      "6000",
+      "festive",
+      "SAR-SLK",
+      "Silk saree",
+      "1",
+      "2499",
+      "Card",
+      "Yes"
+     ],
+     [
+      "NF-1003",
+      "07/09/2026",
+      "Fathima R",
+      "fathima@example.com",
+      "mobile",
+      "90030 44444",
+      "home",
+      "044 2345 6789",
+      "7 Beach Road",
+      "Chennai",
+      "6000",
+      "festive",
+      "BLS-STD",
+      "Blouse stitching",
+      "one",
+      "350",
+      "Card",
+      "Yes"
+     ],
+     [
+      "NF-1004",
+      "31/09/2026",
+      "Arun P",
+      "arun@example.com",
+      "mobile",
+      "98765 43210",
+      "",
+      "",
+      "22 Lake View",
+      "Coimbatore",
+      "641001",
+      "casual; summer",
+      "TSH-WHT-M",
+      "White tee",
+      "3",
+      "399",
+      "Paytm",
+      "No"
+     ],
+     [
+      "NF-1004",
+      "31/09/2026",
+      "Arun P",
+      "arun.p@example.com",
+      "mobile",
+      "98765 43210",
+      "",
+      "",
+      "22 Lake View",
+      "Coimbatore",
+      "641001",
+      "casual; summer",
+      "TSH-BLK-M",
+      "Black tee",
+      "2",
+      "399",
+      "Paytm",
+      "No"
+     ]
+    ],
+    "delimiter": ","
+   },
+   "browser": {
+    "headers": [
+     "Order ID",
+     "Order Date",
+     "Customer Name",
+     "Customer Email",
+     "Phone 1 Type",
+     "Phone 1 Number",
+     "Phone 2 Type",
+     "Phone 2 Number",
+     "Street",
+     "City",
+     "Pincode",
+     "Tags",
+     "SKU",
+     "Product",
+     "Qty",
+     "Unit Price",
+     "Payment Method",
+     "Paid"
+    ],
+    "rows": [
+     [
+      "NF-1001",
+      "05/09/2026",
+      "Divya S",
+      "divya@example.com",
+      "mobile",
+      "98400 11111",
+      "whatsapp",
+      "98400 22222",
+      "12 Anna Salai",
+      "Chennai",
+      "600002",
+      "festive; cotton",
+      "KUR-RED-M",
+      "Red cotton kurti",
+      "2",
+      "549",
+      "UPI",
+      "Yes"
+     ],
+     [
+      "NF-1001",
+      "05/09/2026",
+      "Divya S",
+      "divya@example.com",
+      "mobile",
+      "98400 11111",
+      "whatsapp",
+      "98400 22222",
+      "12 Anna Salai",
+      "Chennai",
+      "600002",
+      "festive; cotton",
+      "DUP-GLD",
+      "Gold dupatta",
+      "1",
+      "299",
+      "UPI",
+      "Yes"
+     ],
+     [
+      "NF-1002",
+      "06/09/2026",
+      "Rahul K",
+      "rahul.k@example",
+      "mobile",
+      "99620 33333",
+      "",
+      "",
+      "4 MG Road",
+      "Bengaluru",
+      "560001",
+      "casual",
+      "SHR-BLU-L",
+      "Blue linen shirt",
+      "1",
+      "799",
+      "COD",
+      "No"
+     ],
+     [
+      "NF-1003",
+      "07/09/2026",
+      "Fathima R",
+      "fathima@example.com",
+      "mobile",
+      "90030 44444",
+      "home",
+      "044 2345 6789",
+      "7 Beach Road",
+      "Chennai",
+      "6000",
+      "festive",
+      "SAR-SLK",
+      "Silk saree",
+      "1",
+      "2499",
+      "Card",
+      "Yes"
+     ],
+     [
+      "NF-1003",
+      "07/09/2026",
+      "Fathima R",
+      "fathima@example.com",
+      "mobile",
+      "90030 44444",
+      "home",
+      "044 2345 6789",
+      "7 Beach Road",
+      "Chennai",
+      "6000",
+      "festive",
+      "BLS-STD",
+      "Blouse stitching",
+      "one",
+      "350",
+      "Card",
+      "Yes"
+     ],
+     [
+      "NF-1004",
+      "31/09/2026",
+      "Arun P",
+      "arun@example.com",
+      "mobile",
+      "98765 43210",
+      "",
+      "",
+      "22 Lake View",
+      "Coimbatore",
+      "641001",
+      "casual; summer",
+      "TSH-WHT-M",
+      "White tee",
+      "3",
+      "399",
+      "Paytm",
+      "No"
+     ],
+     [
+      "NF-1004",
+      "31/09/2026",
+      "Arun P",
+      "arun.p@example.com",
+      "mobile",
+      "98765 43210",
+      "",
+      "",
+      "22 Lake View",
+      "Coimbatore",
+      "641001",
+      "casual; summer",
+      "TSH-BLK-M",
+      "Black tee",
+      "2",
+      "399",
+      "Paytm",
+      "No"
+     ]
+    ],
+    "delimiter": ","
+   }
+  },
+  "parity/blank_lines.csv": {
+   "format": "csv",
+   "node": {
+    "headers": [
+     "Name",
+     "Qty"
+    ],
+    "rows": [
+     [
+      "first",
+      "1"
+     ],
+     [
+      "",
+      ""
+     ],
+     [
+      "",
+      ""
+     ],
+     [
+      "after two",
+      "2"
+     ],
+     [
+      "",
+      ""
+     ],
+     [
+      "after one",
+      "3"
+     ],
+     [
+      "",
+      ""
+     ]
+    ],
+    "delimiter": ","
+   },
+   "browser": {
+    "headers": [
+     "Name",
+     "Qty"
+    ],
+    "rows": [
+     [
+      "first",
+      "1"
+     ],
+     [
+      "",
+      ""
+     ],
+     [
+      "",
+      ""
+     ],
+     [
+      "after two",
+      "2"
+     ],
+     [
+      "",
+      ""
+     ],
+     [
+      "after one",
+      "3"
+     ],
+     [
+      "",
+      ""
+     ]
+    ],
+    "delimiter": ","
+   }
+  },
+  "parity/blank_rows.xlsx": {
+   "format": "xlsx",
+   "node": {
+    "headers": [
+     "Name",
+     "Qty"
+    ],
+    "rows": [
+     [
+      "first",
+      1
+     ],
+     [
+      "",
+      ""
+     ],
+     [
+      "",
+      ""
+     ],
+     [
+      "after two blanks",
+      2
+     ],
+     [
+      "",
+      ""
+     ],
+     [
+      "after one blank",
+      3
+     ],
+     [
+      "",
+      ""
+     ],
+     [
+      "last",
+      4
+     ]
+    ]
+   },
+   "browser": {
+    "headers": [
+     "Name",
+     "Qty"
+    ],
+    "rows": [
+     [
+      "first",
+      1
+     ],
+     [
+      "",
+      ""
+     ],
+     [
+      "",
+      ""
+     ],
+     [
+      "after two blanks",
+      2
+     ],
+     [
+      "",
+      ""
+     ],
+     [
+      "after one blank",
+      3
+     ],
+     [
+      "",
+      ""
+     ],
+     [
+      "last",
+      4
+     ]
+    ]
+   }
+  },
+  "parity/error_cells.xlsx": {
+   "format": "xlsx",
+   "node": {
+    "headers": [
+     "Name",
+     "Value",
+     "Computed"
+    ],
+    "rows": [
+     [
+      "missing",
+      "#N/A",
+      "#N/A"
+     ],
+     [
+      "divide",
+      "#DIV/0!",
+      "#DIV/0!"
+     ],
+     [
+      "ref",
+      "#REF!",
+      7
+     ]
+    ]
+   },
+   "browser": {
+    "headers": [
+     "Name",
+     "Value",
+     "Computed"
+    ],
+    "rows": [
+     [
+      "missing",
+      "#N/A",
+      "#N/A"
+     ],
+     [
+      "divide",
+      "#DIV/0!",
+      "#DIV/0!"
+     ],
+     [
+      "ref",
+      "#REF!",
+      7
+     ]
+    ]
+   }
+  },
+  "parity/formula_results.xlsx": {
+   "format": "xlsx",
+   "node": {
+    "headers": [
+     "Kind",
+     "Bool",
+     "Error",
+     "Date",
+     "Number",
+     "Text",
+     "No result"
+    ],
+    "rows": [
+     [
+      "plain",
+      true,
+      "#DIV/0!",
+      {
+       "$date": "2026-10-18T00:00:00.000Z"
+      },
+      2,
+      "ab",
+      ""
+     ],
+     [
+      "shared",
+      false,
+      "#DIV/0!",
+      {
+       "$date": "1999-12-31T12:00:00.000Z"
+      },
+      3.25,
+      "cd",
+      ""
+     ],
+     [
+      "plain false",
+      false,
+      "#N/A",
+      {
+       "$date": "2026-10-19T00:00:00.000Z"
+      },
+      0,
+      "",
+      ""
+     ]
+    ]
+   },
+   "browser": {
+    "headers": [
+     "Kind",
+     "Bool",
+     "Error",
+     "Date",
+     "Number",
+     "Text",
+     "No result"
+    ],
+    "rows": [
+     [
+      "plain",
+      true,
+      "#DIV/0!",
+      {
+       "$date": "2026-10-18T00:00:00.000Z"
+      },
+      2,
+      "ab",
+      ""
+     ],
+     [
+      "shared",
+      false,
+      "#DIV/0!",
+      {
+       "$date": "1999-12-31T12:00:00.000Z"
+      },
+      3.25,
+      "cd",
+      ""
+     ],
+     [
+      "plain false",
+      false,
+      "#N/A",
+      {
+       "$date": "2026-10-19T00:00:00.000Z"
+      },
+      0,
+      "",
+      ""
+     ]
+    ]
+   }
+  },
+  "parity/header_commas.tsv": {
+   "format": "csv",
+   "node": {
+    "headers": [
+     "Name, full",
+     "City, State, Country",
+     "Notes, if any"
+    ],
+    "rows": [
+     [
+      "Ravi, K",
+      "Chennai, TN, IN",
+      "none, really"
+     ],
+     [
+      "Asha",
+      "Pune, MH, IN",
+      ""
+     ]
+    ],
+    "delimiter": "\t"
+   },
+   "browser": {
+    "headers": [
+     "Name, full",
+     "City, State, Country",
+     "Notes, if any"
+    ],
+    "rows": [
+     [
+      "Ravi, K",
+      "Chennai, TN, IN",
+      "none, really"
+     ],
+     [
+      "Asha",
+      "Pune, MH, IN",
+      ""
+     ]
+    ],
+    "delimiter": "\t"
+   }
+  },
+  "parity/ragged_rows.csv": {
+   "format": "csv",
+   "node": {
+    "headers": [
+     "A",
+     "B",
+     "C"
+    ],
+    "rows": [
+     [
+      "1",
+      "",
+      ""
+     ],
+     [
+      "1",
+      "2",
+      ""
+     ],
+     [
+      "1",
+      "2",
+      "3"
+     ],
+     [
+      "1",
+      "2",
+      "3",
+      "4",
+      "5"
+     ],
+     [
+      "",
+      "",
+      ""
+     ]
+    ],
+    "delimiter": ","
+   },
+   "browser": {
+    "headers": [
+     "A",
+     "B",
+     "C"
+    ],
+    "rows": [
+     [
+      "1",
+      "",
+      ""
+     ],
+     [
+      "1",
+      "2",
+      ""
+     ],
+     [
+      "1",
+      "2",
+      "3"
+     ],
+     [
+      "1",
+      "2",
+      "3",
+      "4",
+      "5"
+     ],
+     [
+      "",
+      "",
+      ""
+     ]
+    ],
+    "delimiter": ","
+   }
+  },
+  "parity/tamil_text.xlsx": {
+   "format": "xlsx",
+   "node": {
+    "headers": [
+     "பெயர்",
+     "ஊர்",
+     "மதிப்பெண்"
+    ],
+    "rows": [
+     [
+      "கார்த்திக் சுந்தரம்",
+      "சென்னை",
+      91
+     ],
+     [
+      "மீனா 🌸",
+      "மதுரை",
+      87
+     ],
+     [
+      "ஆனந்த்",
+      "கோயம்புத்தூர் 🏙️",
+      78
+     ]
+    ]
+   },
+   "browser": {
+    "headers": [
+     "பெயர்",
+     "ஊர்",
+     "மதிப்பெண்"
+    ],
+    "rows": [
+     [
+      "கார்த்திக் சுந்தரம்",
+      "சென்னை",
+      91
+     ],
+     [
+      "மீனா 🌸",
+      "மதுரை",
+      87
+     ],
+     [
+      "ஆனந்த்",
+      "கோயம்புத்தூர் 🏙️",
+      78
+     ]
+    ]
+   }
+  },
+  "parity/typed_cells.xlsx": {
+   "format": "xlsx",
+   "node": {
+    "headers": [
+     "Label",
+     "Number",
+     "Boolean",
+     "Date",
+     "DateTime",
+     "Rich",
+     "Link",
+     "Formula",
+     "Text number"
+    ],
+    "rows": [
+     [
+      "first",
+      42.5,
+      true,
+      {
+       "$date": "2026-10-18T00:00:00.000Z"
+      },
+      {
+       "$date": "2026-10-18T13:45:30.000Z"
+      },
+      "Bold and plain",
+      "Example",
+      85,
+      "00123"
+     ],
+     [
+      "second",
+      -0.001,
+      false,
+      {
+       "$date": "1999-12-31T00:00:00.000Z"
+      },
+      {
+       "$date": "2000-01-01T00:00:01.000Z"
+      },
+      "தமிழ் 🎉",
+      "mailto",
+      "no",
+      "1e5"
+     ]
+    ]
+   },
+   "browser": {
+    "headers": [
+     "Label",
+     "Number",
+     "Boolean",
+     "Date",
+     "DateTime",
+     "Rich",
+     "Link",
+     "Formula",
+     "Text number"
+    ],
+    "rows": [
+     [
+      "first",
+      42.5,
+      true,
+      {
+       "$date": "2026-10-18T00:00:00.000Z"
+      },
+      {
+       "$date": "2026-10-18T13:45:30.000Z"
+      },
+      "Bold and plain",
+      "Example",
+      85,
+      "00123"
+     ],
+     [
+      "second",
+      -0.001,
+      false,
+      {
+       "$date": "1999-12-31T00:00:00.000Z"
+      },
+      {
+       "$date": "2000-01-01T00:00:01.000Z"
+      },
+      "தமிழ் 🎉",
+      "mailto",
+      "no",
+      "1e5"
+     ]
+    ]
+   }
+  },
+  "real-world/case1_1904_dates.xlsx": {
+   "format": "xlsx",
+   "node": {
+    "headers": [
+     "Name",
+     "BirthDate",
+     "JoinDate"
+    ],
+    "rows": [
+     [
+      "Alice Mac",
+      {
+       "$date": "2026-05-15T00:00:00.000Z"
+      },
+      {
+       "$date": "1904-01-02T00:00:00.000Z"
+      }
+     ],
+     [
+      "Bob Mac",
+      {
+       "$date": "1985-10-26T00:00:00.000Z"
+      },
+      {
+       "$date": "2020-03-01T00:00:00.000Z"
+      }
+     ]
+    ]
+   },
+   "browser": {
+    "headers": [
+     "Name",
+     "BirthDate",
+     "JoinDate"
+    ],
+    "rows": [
+     [
+      "Alice Mac",
+      {
+       "$date": "2026-05-15T00:00:00.000Z"
+      },
+      {
+       "$date": "1904-01-02T00:00:00.000Z"
+      }
+     ],
+     [
+      "Bob Mac",
+      {
+       "$date": "1985-10-26T00:00:00.000Z"
+      },
+      {
+       "$date": "2020-03-01T00:00:00.000Z"
+      }
+     ]
+    ]
+   }
+  },
+  "real-world/case2_numeric_identifiers.xlsx": {
+   "format": "xlsx",
+   "node": {
+    "headers": [
+     "Name",
+     "Phone",
+     "NationalID",
+     "PostalCode",
+     "ItemCount"
+    ],
+    "rows": [
+     [
+      "Alice",
+      9876543210,
+      1234567890123456,
+      600001,
+      42
+     ],
+     [
+      "Bob",
+      8765432109,
+      9876543210987654,
+      12345,
+      100
+     ]
+    ]
+   },
+   "browser": {
+    "headers": [
+     "Name",
+     "Phone",
+     "NationalID",
+     "PostalCode",
+     "ItemCount"
+    ],
+    "rows": [
+     [
+      "Alice",
+      9876543210,
+      1234567890123456,
+      600001,
+      42
+     ],
+     [
+      "Bob",
+      8765432109,
+      9876543210987654,
+      12345,
+      100
+     ]
+    ]
+   }
+  },
+  "real-world/case3_excel_semicolon.csv": {
+   "format": "csv",
+   "node": {
+    "headers": [
+     "Product",
+     "Price",
+     "Rating"
+    ],
+    "rows": [
+     [
+      "Widget A",
+      "12,50",
+      "4,8"
+     ],
+     [
+      "Widget B",
+      "99,95",
+      "4,2"
+     ]
+    ],
+    "delimiter": ";"
+   },
+   "browser": {
+    "headers": [
+     "Product",
+     "Price",
+     "Rating"
+    ],
+    "rows": [
+     [
+      "Widget A",
+      "12,50",
+      "4,8"
+     ],
+     [
+      "Widget B",
+      "99,95",
+      "4,2"
+     ]
+    ],
+    "delimiter": ";"
+   }
+  },
+  "real-world/case3_excel_utf8_bom.csv": {
+   "format": "csv",
+   "node": {
+    "headers": [
+     "Name",
+     "Department",
+     "Salary"
+    ],
+    "rows": [
+     [
+      "Alice",
+      "Engineering",
+      "75000"
+     ],
+     [
+      "Bob",
+      "Design",
+      "65000"
+     ]
+    ],
+    "delimiter": ","
+   },
+   "browser": {
+    "headers": [
+     "Name",
+     "Department",
+     "Salary"
+    ],
+    "rows": [
+     [
+      "Alice",
+      "Engineering",
+      "75000"
+     ],
+     [
+      "Bob",
+      "Design",
+      "65000"
+     ]
+    ],
+    "delimiter": ","
+   }
+  },
+  "real-world/case3_google_sheets.csv": {
+   "format": "csv",
+   "node": {
+    "headers": [
+     "Order ID",
+     "Customer",
+     "Address",
+     "Notes"
+    ],
+    "rows": [
+     [
+      "1001",
+      "Smith, John",
+      "123 Main St\nApt 4B",
+      "Special order: \"fragile\""
+     ],
+     [
+      "1002",
+      "Doe, Jane",
+      "456 Oak Ave",
+      "Standard delivery"
+     ]
+    ],
+    "delimiter": ","
+   },
+   "browser": {
+    "headers": [
+     "Order ID",
+     "Customer",
+     "Address",
+     "Notes"
+    ],
+    "rows": [
+     [
+      "1001",
+      "Smith, John",
+      "123 Main St\nApt 4B",
+      "Special order: \"fragile\""
+     ],
+     [
+      "1002",
+      "Doe, Jane",
+      "456 Oak Ave",
+      "Standard delivery"
+     ]
+    ],
+    "delimiter": ","
+   }
+  },
+  "real-world/case4_complex_sheet.xlsx": {
+   "format": "xlsx",
+   "node": {
+    "headers": [
+     "Customer Info",
+     "",
+     "Qty",
+     "Price",
+     "Total",
+     "Secret",
+     "Status",
+     "Status"
+    ],
+    "rows": [
+     [
+      "Acme Corp",
+      "North America",
+      10,
+      25.5,
+      255,
+      "Internal discount applied",
+      "Pending",
+      "Active"
+     ],
+     [
+      "Globex",
+      "Europe",
+      4,
+      100,
+      400,
+      "VIP client",
+      "Shipped",
+      "Archived"
+     ],
+     [
+      "",
+      "",
+      "",
+      "",
+      "",
+      "",
+      "",
+      ""
+     ],
+     [
+      "",
+      "",
+      "",
+      "",
+      "",
+      "",
+      "",
+      ""
+     ],
+     [
+      "",
+      "",
+      "",
+      "",
+      "",
+      "",
+      "",
+      ""
+     ],
+     [
+      "",
+      "",
+      "",
+      "",
+      "",
+      "",
+      "",
+      ""
+     ],
+     [
+      "",
+      "",
+      "",
+      "",
+      "",
+      "",
+      "",
+      ""
+     ],
+     [
+      "",
+      "",
+      "",
+      "",
+      "",
+      "",
+      "",
+      ""
+     ],
+     [
+      "",
+      "",
+      "",
+      "",
+      "",
+      "",
+      "",
+      ""
+     ]
+    ]
+   },
+   "browser": {
+    "headers": [
+     "Customer Info",
+     "",
+     "Qty",
+     "Price",
+     "Total",
+     "Secret",
+     "Status",
+     "Status"
+    ],
+    "rows": [
+     [
+      "Acme Corp",
+      "North America",
+      10,
+      25.5,
+      255,
+      "Internal discount applied",
+      "Pending",
+      "Active"
+     ],
+     [
+      "Globex",
+      "Europe",
+      4,
+      100,
+      400,
+      "VIP client",
+      "Shipped",
+      "Archived"
+     ],
+     [
+      "",
+      "",
+      "",
+      "",
+      "",
+      "",
+      "",
+      ""
+     ],
+     [
+      "",
+      "",
+      "",
+      "",
+      "",
+      "",
+      "",
+      ""
+     ],
+     [
+      "",
+      "",
+      "",
+      "",
+      "",
+      "",
+      "",
+      ""
+     ],
+     [
+      "",
+      "",
+      "",
+      "",
+      "",
+      "",
+      "",
+      ""
+     ],
+     [
+      "",
+      "",
+      "",
+      "",
+      "",
+      "",
+      "",
+      ""
+     ],
+     [
+      "",
+      "",
+      "",
+      "",
+      "",
+      "",
+      "",
+      ""
+     ],
+     [
+      "",
+      "",
+      "",
+      "",
+      "",
+      "",
+      "",
+      ""
+     ]
+    ]
+   }
+  },
+  "real-world/case5_non_latin.csv": {
+   "format": "csv",
+   "node": {
+    "headers": [
+     "பெயர்",
+     "மின்னஞ்சல்",
+     "📦 ஆர்டர் எண்",
+     "💰 தொகை",
+     "🚀 நிலை"
+    ],
+    "rows": [
+     [
+      "கார்த்திக் சுந்தரம்",
+      "karthik@example.com",
+      "ORD-IN-101",
+      "12500.50",
+      "✅ வழங்கப்பட்டது"
+     ],
+     [
+      "மலர்விழி செல்வம்",
+      "malar@example.com",
+      "ORD-IN-102",
+      "4500.00",
+      "⚡ செயலாக்கத்தில் உள்ளது"
+     ],
+     [
+      "Rajesh Kumar 🎉",
+      "rajesh@example.com",
+      "ORD-IN-103",
+      "890.00",
+      "❌ ரத்து செய்யப்பட்டது"
+     ]
+    ],
+    "delimiter": ","
+   },
+   "browser": {
+    "headers": [
+     "பெயர்",
+     "மின்னஞ்சல்",
+     "📦 ஆர்டர் எண்",
+     "💰 தொகை",
+     "🚀 நிலை"
+    ],
+    "rows": [
+     [
+      "கார்த்திக் சுந்தரம்",
+      "karthik@example.com",
+      "ORD-IN-101",
+      "12500.50",
+      "✅ வழங்கப்பட்டது"
+     ],
+     [
+      "மலர்விழி செல்வம்",
+      "malar@example.com",
+      "ORD-IN-102",
+      "4500.00",
+      "⚡ செயலாக்கத்தில் உள்ளது"
+     ],
+     [
+      "Rajesh Kumar 🎉",
+      "rajesh@example.com",
+      "ORD-IN-103",
+      "890.00",
+      "❌ ரத்து செய்யப்பட்டது"
+     ]
+    ],
+    "delimiter": ","
+   }
+  },
+  "real-world/case5_non_latin.xlsx": {
+   "format": "xlsx",
+   "node": {
+    "headers": [
+     "பெயர்",
+     "மின்னஞ்சல்",
+     "📦 ஆர்டர் எண்",
+     "💰 தொகை",
+     "🚀 நிலை"
+    ],
+    "rows": [
+     [
+      "கார்த்திக் சுந்தரம்",
+      "karthik@example.com",
+      "ORD-IN-101",
+      12500.5,
+      "✅ வழங்கப்பட்டது"
+     ],
+     [
+      "மலர்விழி செல்வம்",
+      "malar@example.com",
+      "ORD-IN-102",
+      4500,
+      "⚡ செயலாக்கத்தில் உள்ளது"
+     ],
+     [
+      "Rajesh Kumar 🎉",
+      "rajesh@example.com",
+      "ORD-IN-103",
+      890,
+      "❌ ரத்து செய்யப்பட்டது"
+     ]
+    ]
+   },
+   "browser": {
+    "headers": [
+     "பெயர்",
+     "மின்னஞ்சல்",
+     "📦 ஆர்டர் எண்",
+     "💰 தொகை",
+     "🚀 நிலை"
+    ],
+    "rows": [
+     [
+      "கார்த்திக் சுந்தரம்",
+      "karthik@example.com",
+      "ORD-IN-101",
+      12500.5,
+      "✅ வழங்கப்பட்டது"
+     ],
+     [
+      "மலர்விழி செல்வம்",
+      "malar@example.com",
+      "ORD-IN-102",
+      4500,
+      "⚡ செயலாக்கத்தில் உள்ளது"
+     ],
+     [
+      "Rajesh Kumar 🎉",
+      "rajesh@example.com",
+      "ORD-IN-103",
+      890,
+      "❌ ரத்து செய்யப்பட்டது"
+     ]
+    ]
+   }
+  },
+  "student/sample.csv": {
+   "format": "csv",
+   "node": {
+    "headers": [
+     "Student ID",
+     "First Name",
+     "Last Name",
+     "Enrolled On",
+     "Guardian 1 Name",
+     "Guardian 1 Relation",
+     "Guardian 1 Phone",
+     "Guardian 2 Name",
+     "Guardian 2 Relation",
+     "Guardian 2 Phone",
+     "Subject Code",
+     "Marks",
+     "Passed",
+     "Clubs"
+    ],
+    "rows": [
+     [
+      "S-204",
+      "Kavya",
+      "Iyer",
+      "01/06/2026",
+      "Lakshmi Iyer",
+      "mother",
+      "98400 12345",
+      "Ravi Iyer",
+      "father",
+      "98400 54321",
+      "MATH",
+      "91",
+      "yes",
+      "chess; robotics"
+     ],
+     [
+      "S-204",
+      "Kavya",
+      "Iyer",
+      "01/06/2026",
+      "Lakshmi Iyer",
+      "mother",
+      "98400 12345",
+      "Ravi Iyer",
+      "father",
+      "98400 54321",
+      "PHY",
+      "78",
+      "yes",
+      "chess; robotics"
+     ],
+     [
+      "S-205",
+      "Imran",
+      "Basha",
+      "02/06/2026",
+      "Salma Basha",
+      "mother",
+      "99400 11122",
+      "",
+      "",
+      "",
+      "MATH",
+      "34",
+      "no",
+      "football"
+     ],
+     [
+      "S-205",
+      "Imran",
+      "Basha",
+      "02/06/2026",
+      "Salma Basha",
+      "mother",
+      "99400 11122",
+      "",
+      "",
+      "",
+      "CHEM",
+      "sixty",
+      "yes",
+      "football"
+     ]
+    ],
+    "delimiter": ","
+   },
+   "browser": {
+    "headers": [
+     "Student ID",
+     "First Name",
+     "Last Name",
+     "Enrolled On",
+     "Guardian 1 Name",
+     "Guardian 1 Relation",
+     "Guardian 1 Phone",
+     "Guardian 2 Name",
+     "Guardian 2 Relation",
+     "Guardian 2 Phone",
+     "Subject Code",
+     "Marks",
+     "Passed",
+     "Clubs"
+    ],
+    "rows": [
+     [
+      "S-204",
+      "Kavya",
+      "Iyer",
+      "01/06/2026",
+      "Lakshmi Iyer",
+      "mother",
+      "98400 12345",
+      "Ravi Iyer",
+      "father",
+      "98400 54321",
+      "MATH",
+      "91",
+      "yes",
+      "chess; robotics"
+     ],
+     [
+      "S-204",
+      "Kavya",
+      "Iyer",
+      "01/06/2026",
+      "Lakshmi Iyer",
+      "mother",
+      "98400 12345",
+      "Ravi Iyer",
+      "father",
+      "98400 54321",
+      "PHY",
+      "78",
+      "yes",
+      "chess; robotics"
+     ],
+     [
+      "S-205",
+      "Imran",
+      "Basha",
+      "02/06/2026",
+      "Salma Basha",
+      "mother",
+      "99400 11122",
+      "",
+      "",
+      "",
+      "MATH",
+      "34",
+      "no",
+      "football"
+     ],
+     [
+      "S-205",
+      "Imran",
+      "Basha",
+      "02/06/2026",
+      "Salma Basha",
+      "mother",
+      "99400 11122",
+      "",
+      "",
+      "",
+      "CHEM",
+      "sixty",
+      "yes",
+      "football"
+     ]
+    ],
+    "delimiter": ","
+   }
+  }
+ }
+}

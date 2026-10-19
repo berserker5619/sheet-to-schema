@@ -137,6 +137,44 @@ const inMemory = (c: Case): ImportResult => applyMapping(parseCsv(c.text).rows, 
 
 // ─── Parity ───────────────────────────────────────────────────────────────────
 
+describe('grouping is on by default (2.0, D4)', () => {
+  const orders = jsonSchemaAdapter({
+    $id: 'order',
+    type: 'object',
+    properties: { orderId: { type: 'string' }, items: { type: 'array', items: { type: 'object', properties: { sku: { type: 'string' } } } } },
+  });
+  const plan = {
+    planVersion: 2,
+    target: 'order',
+    entries: [{ ref: 'orderId', column: 0 }, { ref: 'items.sku', column: 1 }],
+    group: { key: [0], collect: ['items'] },
+  };
+  const sheet = 'orderId,sku\r\nA,S1\r\nA,S2\r\nB,S3\r\n';
+
+  it('groups a contiguous plan when runImport is given no grouping option', async () => {
+    const records: Record<string, unknown>[] = [];
+    const result = await runImport({ stream: chunked(sheet), plan, adapter: orders, ctx: undefined, onBatch: batch => void records.push(...batch) });
+    expect(records).toEqual([
+      { orderId: 'A', items: [{ sku: 'S1' }, { sku: 'S2' }] },
+      { orderId: 'B', items: [{ sku: 'S3' }] },
+    ]);
+    expect(result).toMatchObject({ imported: 2, rowsRead: 3, rowsInImported: 3, failed: 0 });
+  });
+
+  it('gives what grouping: true gives', async () => {
+    const byDefault = await runImport({ stream: chunked(sheet), plan, adapter: orders, ctx: undefined });
+    const explicit = await runImport({ stream: chunked(sheet), plan, adapter: orders, ctx: undefined, grouping: true });
+    expect(byDefault).toEqual(explicit);
+  });
+
+  it('still refuses contiguous: false by default, with reason non-contiguous', async () => {
+    const failure = await runImport({ stream: chunked(sheet), plan: { ...plan, group: { ...plan.group, contiguous: false } }, adapter: orders, ctx: undefined }).catch(
+      (error: unknown) => error,
+    );
+    expect(failure).toMatchObject({ code: 'INVALID_PLAN', details: [expect.objectContaining({ code: 'PLAN_GROUP', reason: 'non-contiguous' })] });
+  });
+});
+
 describe('runImport groups exactly as applyMapping does', () => {
   it('reads the order fixture with a grouped plan, so the parity below is about grouping', () => {
     expect(orderPlan.group?.key).toEqual([0]);

@@ -5,3 +5,7 @@
 test/fixtures/real-world/*.csv binary
 test/fixtures/parity/*.csv binary
 test/fixtures/parity/*.tsv binary
+test/fixtures/binary/*.png binary
+test/fixtures/binary/*.pdf binary
+test/fixtures/binary/*.bin binary
+test/fixtures/binary/*.csv binary

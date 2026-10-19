@@ -1,5 +1,6 @@
 import { applyMapping, jsonSchemaAdapter, parseCsv, slotsFor, suggestMapping } from 'sheet-to-schema';
 import { ImportError } from './errors';
+import { MAGIC_BYTES } from '../shared/sheet-format';
 import { GROUPING_NOT_STREAMED, NON_CONTIGUOUS_NOT_STREAMED, previewSheet, runImport, type OnBatch } from './run-import';
 import { chunked, collectedHeap, CSV_TEXT, EMPLOYEES, generatedCsv, HEADERS, PLAN, trackedStream } from './sheet.fixtures';
 
@@ -185,9 +186,13 @@ describe('backpressure', () => {
 
     expect(readAhead.filter(n => n !== 0)).toEqual([]);
     expect(handedRows).toBe(rows);
-    // One batch in flight plus the 512-byte chunk the reader is part-way through — nowhere
-    // near the 2000 rows an unawaited reader would have queued.
-    expect(worstLead).toBeLessThan(200);
+    // One batch in flight, the rows in the bytes classification peeks at before the first row
+    // (MAGIC_BYTES, 8 KB from 2.0), and the 512-byte chunk the reader is part-way through:
+    // nowhere near the 2000 rows an unawaited reader would have queued.
+    const rowBytes = Buffer.byteLength('Name1000,34,2024-03-07,true,Active\r\n');
+    const peeked = Math.ceil(MAGIC_BYTES / rowBytes);
+    expect(worstLead).toBeLessThan(100 + peeked + Math.ceil(512 / rowBytes) + 1);
+    expect(worstLead).toBeLessThan(rows / 4);
   });
 
   it('hands over no more than batchSize records at a time', async () => {
@@ -594,11 +599,10 @@ describe('delimited text that is not comma-separated', () => {
 });
 
 /**
- * Grouping needs an open group carried across a batch boundary, which is Phase 3 (spec §5).
- * Until then a grouped plan is refused, never ignored: ignoring it would import one record
- * per row and report success.
+ * With `grouping: false` (1.x's default; 2.0's is `true`) a grouped plan is refused, never
+ * ignored: ignoring it would import one record per row and report success.
  */
-describe('a plan that groups rows', () => {
+describe('a plan that groups rows, with grouping: false', () => {
   const ORDERS = jsonSchemaAdapter({
     $id: 'order',
     type: 'object',
@@ -613,7 +617,7 @@ describe('a plan that groups rows', () => {
   const SHEET = 'orderId,sku\r\nA,S1\r\nA,S2\r\n';
 
   it('is refused as INVALID_PLAN with a PLAN_GROUP problem that says where grouping does work', async () => {
-    const failure = await runImport({ stream: chunked(SHEET), plan: grouped, adapter: ORDERS, ctx: undefined }).catch((error: unknown) => error);
+    const failure = await runImport({ stream: chunked(SHEET), plan: grouped, adapter: ORDERS, ctx: undefined, grouping: false }).catch((error: unknown) => error);
     expect(failure).toBeInstanceOf(ImportError);
     expect(failure).toMatchObject({ code: 'INVALID_PLAN', status: 400 });
     expect((failure as ImportError).message).toBe(GROUPING_NOT_STREAMED);
@@ -628,18 +632,18 @@ describe('a plan that groups rows', () => {
       pulled = true;
       yield Buffer.from(SHEET);
     }
-    await expect(runImport({ stream: watched(), plan: grouped, adapter: ORDERS, ctx: undefined })).rejects.toMatchObject({ code: 'INVALID_PLAN' });
+    await expect(runImport({ stream: watched(), plan: grouped, adapter: ORDERS, ctx: undefined, grouping: false })).rejects.toMatchObject({ code: 'INVALID_PLAN' });
     expect(pulled).toBe(false);
 
     const { stream, destroyed } = trackedStream(SHEET);
     const written: unknown[] = [];
-    await expect(runImport({ stream, plan: grouped, adapter: ORDERS, ctx: undefined, onBatch: batch => void written.push(...batch) })).rejects.toThrow();
+    await expect(runImport({ stream, plan: grouped, adapter: ORDERS, ctx: undefined, grouping: false, onBatch: batch => void written.push(...batch) })).rejects.toThrow();
     expect(destroyed()).toBe(true);
     expect(written).toEqual([]);
   });
 
   it('carries the plan\'s own warnings with the refusal', async () => {
-    const failure = await runImport({ stream: chunked(SHEET), plan: { ...grouped, target: 'orders' }, adapter: ORDERS, ctx: undefined }).catch((error: unknown) => error);
+    const failure = await runImport({ stream: chunked(SHEET), plan: { ...grouped, target: 'orders' }, adapter: ORDERS, ctx: undefined, grouping: false }).catch((error: unknown) => error);
     expect(((failure as ImportError).details as { code: string }[]).map(problem => problem.code)).toEqual(['PLAN_TARGET_MISMATCH', 'PLAN_GROUP']);
   });
 
