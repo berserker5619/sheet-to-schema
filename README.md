@@ -294,6 +294,13 @@ file is a workbook.
   browser does not, because there the file is the user's own and only their tab is at risk.
 - **The first sheet, header row 1**, as on the server.
 
+Known limitations of reading a file, everywhere:
+
+- **Binary is recognised by a NUL byte in the first 8 KB.** That catches images, executables
+  and most PDFs, but a file with no NUL byte in its first 8 KB, such as some PDFs whose
+  opening objects are all text, is still read as CSV, into rows of nonsense that the mapping
+  then reports cell by cell. Check a file's type yourself first if that matters to you.
+
 Known limitations of the browser path:
 
 - **A workbook needs `DecompressionStream` with the `deflate-raw` format.** A CSV needs
@@ -566,7 +573,7 @@ main entry exports it from 1.2.0, for `readCsvFile`). Each code has the HTTP sta
 
 | Code | HTTP | Raised when |
 | --- | --- | --- |
-| `UNSUPPORTED_FORMAT` | 415 | The bytes are not a CSV or an `.xlsx`: a pre-2007 `.xls`, UTF-16 text, or (from 2.0) binary, meaning a NUL byte in the first 8 KB, as in an image or a PDF. |
+| `UNSUPPORTED_FORMAT` | 415 | The bytes are not a CSV or an `.xlsx`: a pre-2007 `.xls`, UTF-16 text, or (from 2.0) binary, meaning a NUL byte in the first 8 KB, as in an image or most PDFs. |
 | `ABORTED` | 499 | `runImport`'s `signal` aborted (2.0). `details` has `rowsRead`, `imported` and `failed`; `cause` is the signal's reason. |
 | `TIMEOUT` | 408 | `receiveUpload`: the upload sent nothing for `limits.idleTimeoutMs`, or ended before the file did. |
 | `UNSUPPORTED_RUNTIME` | (browser only) | `sheet-to-schema/browser` is asked to read a workbook where there is no `DecompressionStream` with `deflate-raw` (see the browser section for versions). A CSV is not affected. |

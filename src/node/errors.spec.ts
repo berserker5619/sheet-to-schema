@@ -4,7 +4,7 @@ import { ImportError, toErrorBody } from './errors';
 describe('ImportError', () => {
   it('carries the status its code answers with', () => {
     expect(new ImportError('TOO_LARGE', 'x').status).toBe(413);
-    expect(new ImportError('UNKNOWN_ENTITY', 'x').status).toBe(404);
+    expect(new ImportError('NO_FILE', 'x').status).toBe(400);
     expect(new ImportError('IMPORT_FAILED', 'x').status).toBe(500);
   });
 

@@ -37,12 +37,6 @@ export type ImportErrorCode =
   | 'ARCHIVE_REFUSED'
   /** Rows, columns or one cell past the configured bound. */
   | 'SHEET_TOO_LARGE'
-  /**
-   * No adapter is registered under the requested name. Dynamic Entity's name for it, kept
-   * because it is on the wire: renaming a code breaks every client that branches on it. Not
-   * raised by the package since 2.0; an app's own route may raise it.
-   */
-  | 'UNKNOWN_ENTITY'
   /** The `plan` field is missing, is not JSON, or does not describe this schema. */
   | 'INVALID_PLAN'
   /**
@@ -81,7 +75,6 @@ const STATUS: Record<ImportErrorCode, number> = {
   MALFORMED_FILE: 400,
   ARCHIVE_REFUSED: 400,
   SHEET_TOO_LARGE: 413,
-  UNKNOWN_ENTITY: 404,
   INVALID_PLAN: 400,
   TIMEOUT: 408,
   IMPORT_FAILED: 500,

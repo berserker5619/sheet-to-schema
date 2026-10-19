@@ -143,6 +143,7 @@ From `sheet-to-schema/node`:
 | `safeFieldName` | Nothing. `receiveUpload` still uses it for its own messages |
 | `SERVER_FEATURES` | The same constant, from the main entry: `import { SERVER_FEATURES } from 'sheet-to-schema'` |
 | `ImportLimits.totalTimeoutMs` | `signal: AbortSignal.timeout(ms)` on `runImport` |
+| The `UNKNOWN_ENTITY` error code | Your own 404 for a name your route does not know |
 
 The @internal router hooks (`param`, `engineVersion`, `templateName`, `previewExtras`, `plan`)
 went with the router.
@@ -155,5 +156,5 @@ went with the router.
 - `runImport({ onProgress })` is told `{ bytesRead, rowsRead }` after each batch and at the end.
 - `receiveUpload` enforces `limits.idleTimeoutMs`.
 
-The package itself no longer raises `UNKNOWN_ENTITY`. It stays in `ImportErrorCode` for routes
-that use it.
+The `UNKNOWN_ENTITY` error code is gone, with the router that raised it. A route of your own
+that looks a name up answers its own 404.

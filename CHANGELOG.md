@@ -28,6 +28,8 @@ branch under the `release-1.x` dist-tag.
   `runImport({ signal: AbortSignal.timeout(ms) })`.
 - **The `express` optional peer dependency.** The package never imported it.
 - `SERVER_FEATURES` is no longer exported from `/node`. It moved to the main entry.
+- **The `UNKNOWN_ENTITY` error code.** Only the router raised it. A route of your own that needs
+  "no such name" answers its own 404.
 
 ### Added
 
@@ -59,7 +61,6 @@ branch under the `release-1.x` dist-tag.
 - **`receiveUpload` enforces `limits.maxFieldNameBytes`** on every part, refusing a longer name
   with `TOO_LARGE`. busboy applies its `fieldNameSize` to urlencoded bodies only, so 1.x
   accepted any part name in a multipart upload, as 1.3.0 still does.
-- The package no longer raises `UNKNOWN_ENTITY`. The code stays in `ImportErrorCode`.
 
 ---
 
