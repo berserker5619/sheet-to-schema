@@ -1,23 +1,22 @@
 # sheet-to-schema
 
-Turn the rows of a spreadsheet into records that fit a schema you already have.
+A backend import engine for Node. It streams CSV and `.xlsx` files of any size, matches their
+columns to the schema you already have, validates every row, groups rows into records, and runs
+large imports as background jobs a client polls. It is a set of functions: **preview** a file,
+**validate** it, **import** it. Your app owns the routes, the storage, the jobs and the queues.
 
-You describe where records go (a JSON Schema, an example record, or your own adapter). The
-library suggests which column feeds which field, lets a person correct that, and then builds
-one record per row, or per group of rows, reporting every cell it could not use.
+- **Streaming.** `sheet-to-schema/node` reads a file a batch at a time, so memory is bounded by
+  the batch, not the file. A run can be cancelled (`signal`) and reports its progress
+  (`onProgress`).
+- **Column matching.** You describe where records go: a JSON Schema, an example record, or your
+  own adapter. The engine suggests which column feeds which field, for a person to correct.
+- **Validation.** Every cell and every record is checked against the schema, and every problem
+  is reported with the spreadsheet row the user sees. Validating is an import that writes nothing.
+- **Grouping.** Rows that repeat a key become one record with its items collected.
+- **Background imports with polling.** The recipe below uploads once, then validates and imports
+  as jobs with progress and cancel, for files too large to import inside one request.
 
-It is a set of functions: **preview** a file, **validate** it, **import** it. It reads, matches,
-validates and streams. Your app owns the routes, the storage, the jobs and the queues.
-
-- **Browser-safe core, no dependencies.** The main entry runs in a browser tab or in Node.
-- **A streaming server half.** `sheet-to-schema/node` reads CSV and `.xlsx` files of any size
-  with memory bounded by a batch, can be cancelled and reports its progress.
-- **The same engine on both sides.** A file imports to the same records in the browser and
-  on the server, because both run the same function over the same plan.
-- **The same reader on both sides.** `sheet-to-schema/browser` reads a CSV, TSV or `.xlsx`
-  file in a browser into exactly the rows the server reads from the same bytes.
-
-> **Status: stable (2.0.0).** Coming from 1.x: read
+> **Status: stable (2.0).** Coming from 1.x: read
 > [MIGRATING-2.0.md](https://github.com/berserker5619/sheet-to-schema/blob/main/MIGRATING-2.0.md).
 > It is the import engine of [Dynamic Entity](https://github.com/berserker5619/Dynamic-Entity#readme),
 > extracted so it can be used without it; Dynamic Entity 3.x stays on the 1.x line, which is
@@ -35,13 +34,13 @@ npm install busboy    # to receive uploads
 
 Node 20 or later for the main entry; the two packages above are optional peers, loaded the
 first time they are needed. Reading a CSV needs none of them, through the main entry's
-`readCsvFile`. **`sheet-to-schema/browser` needs `exceljs` installed for a bundled app to
-build**, even one that never reads a workbook: see the browser section.
+`readCsvFile`. The browser readers are described near the end, under
+[Reading files in the browser](#reading-files-in-the-browser-maintained-no-new-features).
 
-## Preview, validate, import
+## Server quick start
 
 Three calls on a file, here read from disk. On a server the file comes from an upload; the
-recipe [Background imports with polling](#recipe-background-imports-with-polling) shows that.
+[recipe](#recipe-background-imports-with-polling) below shows that.
 
 <!-- compiled: functions -->
 ```ts
@@ -93,243 +92,9 @@ file read as one record per row is a different import.
 never hold the file: memory is bounded by `limits.batchSize`. The format is decided by the
 bytes, never by the name.
 
-## In memory, anywhere: `applyMapping`
+### The functions
 
-The same engine on rows you already hold, in a browser or in Node:
-
-```ts
-import { applyMapping, jsonSchemaAdapter, parseCsv, suggestMapping } from 'sheet-to-schema';
-
-const adapter = jsonSchemaAdapter({
-  $id: 'order',
-  type: 'object',
-  required: ['orderId'],
-  properties: {
-    orderId: { type: 'string', title: 'Order' },
-    placed: { type: 'string', format: 'date', title: 'Placed' },
-    tags: { type: 'array', title: 'Tags', items: { type: 'string' } },
-    items: {
-      type: 'array',
-      title: 'Item',
-      items: {
-        type: 'object',
-        properties: { sku: { type: 'string', title: 'SKU' }, qty: { type: 'integer', title: 'Qty' } },
-      },
-    },
-  },
-});
-
-const sheet = parseCsv(
-  'Order,Placed,Item 1 SKU,Item 1 Qty,Item 2 SKU,Item 2 Qty\n' +
-    'A-1,2026-09-05,PEN,2,INK,1\n' +
-    'A-2,2026-09-06,PAD,x,,\n',
-);
-
-// 1. A suggestion, for a person to check. Anything inferred is tagged `confidence: 'guess'`.
-const plan = suggestMapping(sheet.headers, adapter);
-
-// 2. Rows in, records out. The fourth argument is whatever context your adapter wants.
-const result = applyMapping(sheet.rows, plan, adapter, undefined);
-
-result.records;
-// [{ orderId: 'A-1', placed: '2026-09-05', items: [{ sku: 'PEN', qty: 2 }, { sku: 'INK', qty: 1 }] }]
-result.errors;
-// [{ row: 3, ref: 'items.0.qty', column: 3, code: 'CELL_FORMAT', message: '"x" is not a number', raw: 'x' }]
-```
-
-A row that fails is collected, not thrown, and its record is left out. `row` is the number
-the user sees in their spreadsheet: the header is row 1.
-
-## The mapping plan
-
-A plan is plain JSON, so it can be stored, sent to a server, and applied again next month.
-
-```ts
-interface MappingPlan {
-  planVersion: 2;
-  target: string;            // the adapter's id
-  schemaVersion?: number;    // the adapter's version when the plan was written
-  sourceHeaders?: string[];
-  entries: {
-    ref: string;             // where the value goes: 'placed', 'items.0.sku'
-    column?: number;         // which sheet column, from 0 …
-    constant?: unknown;      // … or one value for every row
-    split?: string;          // a separator, for a list written in one cell
-    dateOrder?: 'DMY' | 'MDY' | 'YMD';
-  }[];
-  lists?: Record<string, { compact?: boolean }>;
-  group?: { key: number[]; collect: string[]; contiguous?: boolean };
-}
-```
-
-`readPlan` reads a plan from anywhere, including the older v1 shape (`entity`,
-`configVersion`), and returns it normalised with every problem it found. Problems carry a
-stable `code`; compare that, never the message.
-
-## Three ways a sheet holds a list
-
-**Numbered columns.** `Item 1 SKU`, `Item 2 SKU`: one slot per pair of columns, as in the
-quick start. Refs carry the slot: `items.0.sku`, `items.1.sku`. Empty slots are dropped and
-the rest renumbered, unless `lists: { items: { compact: false } }`.
-
-**One cell, split.** `rush; gift` in a `Tags` column becomes `['rush', 'gift']`. The default
-separator is `;`. An entry's `split` states another.
-
-**One row per item, grouped.** The order repeats on every row and each row carries one item:
-
-```ts
-const sheet = parseCsv('Order,Placed,SKU,Qty\nA-1,05/09/2026,PEN,2\nA-1,06/09/2026,INK,1\nA-2,06/09/2026,PAD,4\n');
-
-const plan = {
-  planVersion: 2,
-  target: 'order',
-  entries: [
-    { ref: 'orderId', column: 0 },
-    { ref: 'placed', column: 1, dateOrder: 'DMY' },
-    { ref: 'items.sku', column: 2 }, // no slot: one item per row
-    { ref: 'items.qty', column: 3 },
-  ],
-  group: { key: [0], collect: ['items'] },
-};
-
-const result = applyMapping(sheet.rows, plan, adapter, undefined);
-result.records;
-// [{ orderId: 'A-1', placed: '2026-09-05', items: [{ sku: 'PEN', qty: 2 }, { sku: 'INK', qty: 1 }] },
-//  { orderId: 'A-2', placed: '2026-09-06', items: [{ sku: 'PAD', qty: 4 }] }]
-result.warnings;
-// [{ row: 2, rows: [2, 3], ref: 'placed', code: 'RECORD_GROUP_CONFLICT', message: 'Rows disagree on placed; kept row 2.', raw: '2026-09-06' }]
-```
-
-Rows of a group that disagree on a parent field keep the first row's value and raise a
-**warning**: the record is still imported. A problem inside one collected item, such as
-`items.2.sku` being required, names that item's own row (from 1.3); a problem with the record
-as a whole names the group's first row and carries all its rows in `rows`. Grouping works in `applyMapping`, and on the server
-`runImport` groups by default from 2.0, giving the same records as `applyMapping` (a group that
-straddles a batch is carried into the next one and written whole). With `grouping: false` a
-grouped plan is refused, as 1.x did by default. The runner groups
-contiguous rows only (sort the sheet by the key columns); `contiguous: false` works in
-`applyMapping` and is refused by the runner, since it would hold every group to the end of the
-file.
-
-Grouping is bounded: a group of more than 10,000 rows, more than 200,000 groups, or (for
-contiguous groups) more than 8 MiB of group keys stops the import with an `ImportFailure`
-(`GROUP_TOO_LARGE` or `TOO_MANY_GROUPS`), as does a key that comes back after its rows ended
-(`GROUP_NOT_CONTIGUOUS`). Raise a limit with
-`applyMapping(rows, plan, adapter, ctx, { groupLimits: { maxGroupRows: 50_000 } })`, or with the
-server's `limits`. `toErrorBody` answers these 413 and 422.
-
-## Dates are never guessed
-
-`2026-09-05` is read as written. `05/09/2026` could be 5 September or 9 May, so it is an
-error unless something states the order: an entry's `dateOrder`, or the run's
-(`applyMapping(rows, plan, adapter, ctx, { dateOrder: 'DMY' })`). The entry wins. Pass a
-sample of rows to `suggestMapping(headers, adapter, { sample })` and it states the order for a
-column whose values settle it (a `31/08/2026` can only be day first).
-
-## Adapters
-
-An adapter is the one thing that knows your schema. Two ship with the package:
-
-| Adapter | Use it when |
-| --- | --- |
-| `jsonSchemaAdapter(schema, options?)` | You have a JSON Schema. Types, formats, `enum`, `required`, nested objects, and arrays of objects or of scalars. |
-| `exampleJsonAdapter(sample, options?)` | You have one example record and no schema. Types are inferred from its values. |
-
-For anything else, implement `SchemaAdapter`: `id`, `adapterVersion`, and
-`targets({ slots, lang })`, which lists every place a value can go. Optional hooks let it read
-its own cells (`coerce`), finish a record (`finalize`) and check one (`validate`). That is how
-Dynamic Entity's form configs run on this engine.
-
-## In a browser
-
-**CSV only: `readCsvFile`, from the main entry.** It reads a CSV or TSV file exactly as
-`readSheetFile` below does, with nothing in its module graph that asks for `exceljs`, so an app
-that never installed it builds:
-
-```ts
-import { applyMapping, decimalMarkFor, readCsvFile } from 'sheet-to-schema';
-
-const sheet = await readCsvFile(file, { filename: file.name });
-const result = applyMapping(sheet.rows, plan, adapter, undefined, { decimal: decimalMarkFor(sheet.delimiter) });
-```
-
-The format is still decided by the bytes: an `.xlsx` (or any zip), a pre-2007 `.xls`, a
-UTF-16 file and a binary file are refused with `UNSUPPORTED_FORMAT`, with the server's messages
-for the last three.
-
-**CSV and `.xlsx`: `sheet-to-schema/browser`.**
-
-```ts
-import { applyMapping, decimalMarkFor } from 'sheet-to-schema';
-import { readSheetFile } from 'sheet-to-schema/browser';
-
-// `file` from an <input type="file">: a CSV, a TSV or an .xlsx, decided by its bytes.
-const sheet = await readSheetFile(file, { filename: file.name });
-const result = applyMapping(sheet.rows, plan, adapter, undefined, { decimal: decimalMarkFor(sheet.delimiter) });
-```
-
-`readSheetFile` returns the grid the server's `readSheet` reads from the same file: the same
-headers, the same rows with the same typed cells (a date cell is a `Date`, a formula is its
-cached result), the same separator, and the same refusals, with the server's error codes and
-messages. Pass `sheet.delimiter` to `decimalMarkFor`, as the server does, so a semicolon file
-reads `1,5` as 1.5 on both sides. `readXlsx` is the same for a caller that already knows the
-file is a workbook.
-
-- **Install `exceljs` to build with it.** It is loaded with `import()` the first time a
-  workbook is read, so a CSV-only user never downloads it, but a bundler still resolves that
-  `import()` when it builds. Without `exceljs` installed, checked in October 2026 (Dynamic
-  Entity's 3.1 spec, Step 0):
-
-  | Bundler | Builds? | Reading a workbook |
-  | --- | --- | --- |
-  | Angular 21 `ng build` | No: `Could not resolve "exceljs"` | — |
-  | Angular 21 `ng serve` | Yes | `PEER_MISSING` |
-  | Vite 8 (build and dev) | Yes | `PEER_MISSING` |
-  | webpack 5 | No: `Can't resolve 'exceljs'` | — |
-  | Any of them with `exceljs` marked external | Yes | `PEER_MISSING` (from 1.2.0; the browser's `TypeError` is its `cause`) |
-
-  A CSV read through `/browser` works wherever the app builds. An app that reads only CSV and
-  does not install `exceljs` uses `readCsvFile`.
-- **A missing `exceljs` is `PEER_MISSING`** (an `ImportError`, from 1.2.0), with
-  `details.peer` and what to install. A workbook chunk that failed to download is not: the
-  browser's own error (a `TypeError`, or webpack's `ChunkLoadError`) passes through as it is.
-- **The limits are the server's**, with its defaults: `maxBytes`, `maxRows`, `maxColumns`,
-  `maxCellLength` and `maxZipEntries`, through `limits`.
-- **A workbook's zip is checked by what it declares** (entry count, sizes, compression ratio)
-  before ExcelJS sees it. The server also checks what each entry actually inflates to; the
-  browser does not, because there the file is the user's own and only their tab is at risk.
-- **The first sheet, header row 1**, as on the server.
-
-Known limitations of reading a file, everywhere:
-
-- **Binary is recognised by a NUL byte in the first 8 KB.** That catches images, executables
-  and most PDFs, but a file with no NUL byte in its first 8 KB, such as some PDFs whose
-  opening objects are all text, is still read as CSV, into rows of nonsense that the mapping
-  then reports cell by cell. Check a file's type yourself first if that matters to you.
-
-Known limitations of the browser path:
-
-- **A workbook needs `DecompressionStream` with the `deflate-raw` format.** A CSV needs
-  nothing.
-
-  | Runtime | Reads a workbook from |
-  | --- | --- |
-  | Chrome, Edge (desktop and Android) | 103 |
-  | Firefox (desktop and Android) | 113 |
-  | Safari (macOS and iOS) | 16.4 |
-  | Node | 20.12 |
-
-  The browser versions are MDN browser-compat-data 8.1.6's for `deflate-raw`; Node 20.12 is
-  tested (20.11 lacks it). On an older runtime a workbook fails with `UNSUPPORTED_RUNTIME`,
-  saying which versions can read one; a CSV still reads. `/node` and the main entry still need
-  only Node 20.
-- **A broken archive may be described differently.** Both readers refuse it, but the server
-  reads entries front to back and the browser reads the zip's directory, so the message for a
-  damaged `.xlsx` can differ. Every well-formed workbook in the parity fixtures reads the same.
-
-## On a server: `sheet-to-schema/node`
-
-Functions, not routes: the app owns its routes, storage and jobs, and calls these from them.
+The app owns its routes, storage and jobs, and calls these from them.
 
 | Function | What it does |
 | --- | --- |
@@ -580,6 +345,153 @@ setInterval(async () => {
 A job still running when its file expires keeps reading it: on Linux and macOS, deleting a file
 does not close a stream that has it open. Set the expiry well beyond your longest import.
 
+## Plans
+
+A plan is plain JSON, so it can be stored, sent to a server, and applied again next month.
+
+```ts
+interface MappingPlan {
+  planVersion: 2;
+  target: string;            // the adapter's id
+  schemaVersion?: number;    // the adapter's version when the plan was written
+  sourceHeaders?: string[];
+  entries: {
+    ref: string;             // where the value goes: 'placed', 'items.0.sku'
+    column?: number;         // which sheet column, from 0 …
+    constant?: unknown;      // … or one value for every row
+    split?: string;          // a separator, for a list written in one cell
+    dateOrder?: 'DMY' | 'MDY' | 'YMD';
+  }[];
+  lists?: Record<string, { compact?: boolean }>;
+  group?: { key: number[]; collect: string[]; contiguous?: boolean };
+}
+```
+
+`readPlan` reads a plan from anywhere, including the older v1 shape (`entity`,
+`configVersion`), and returns it normalised with every problem it found. Problems carry a
+stable `code`; compare that, never the message.
+
+### Three ways a sheet holds a list
+
+**Numbered columns.** `Item 1 SKU`, `Item 2 SKU`: one slot per pair of columns, as in the
+quick start. Refs carry the slot: `items.0.sku`, `items.1.sku`. Empty slots are dropped and
+the rest renumbered, unless `lists: { items: { compact: false } }`.
+
+**One cell, split.** `rush; gift` in a `Tags` column becomes `['rush', 'gift']`. The default
+separator is `;`. An entry's `split` states another.
+
+**One row per item, grouped.** The order repeats on every row and each row carries one item:
+
+```ts
+const sheet = parseCsv('Order,Placed,SKU,Qty\nA-1,05/09/2026,PEN,2\nA-1,06/09/2026,INK,1\nA-2,06/09/2026,PAD,4\n');
+
+const plan = {
+  planVersion: 2,
+  target: 'order',
+  entries: [
+    { ref: 'orderId', column: 0 },
+    { ref: 'placed', column: 1, dateOrder: 'DMY' },
+    { ref: 'items.sku', column: 2 }, // no slot: one item per row
+    { ref: 'items.qty', column: 3 },
+  ],
+  group: { key: [0], collect: ['items'] },
+};
+
+const result = applyMapping(sheet.rows, plan, adapter, undefined);
+result.records;
+// [{ orderId: 'A-1', placed: '2026-09-05', items: [{ sku: 'PEN', qty: 2 }, { sku: 'INK', qty: 1 }] },
+//  { orderId: 'A-2', placed: '2026-09-06', items: [{ sku: 'PAD', qty: 4 }] }]
+result.warnings;
+// [{ row: 2, rows: [2, 3], ref: 'placed', code: 'RECORD_GROUP_CONFLICT', message: 'Rows disagree on placed; kept row 2.', raw: '2026-09-06' }]
+```
+
+Rows of a group that disagree on a parent field keep the first row's value and raise a
+**warning**: the record is still imported. A problem inside one collected item, such as
+`items.2.sku` being required, names that item's own row (from 1.3); a problem with the record
+as a whole names the group's first row and carries all its rows in `rows`. Grouping works in `applyMapping`, and on the server
+`runImport` groups by default from 2.0, giving the same records as `applyMapping` (a group that
+straddles a batch is carried into the next one and written whole). With `grouping: false` a
+grouped plan is refused, as 1.x did by default. The runner groups
+contiguous rows only (sort the sheet by the key columns); `contiguous: false` works in
+`applyMapping` and is refused by the runner, since it would hold every group to the end of the
+file.
+
+Grouping is bounded: a group of more than 10,000 rows, more than 200,000 groups, or (for
+contiguous groups) more than 8 MiB of group keys stops the import with an `ImportFailure`
+(`GROUP_TOO_LARGE` or `TOO_MANY_GROUPS`), as does a key that comes back after its rows ended
+(`GROUP_NOT_CONTIGUOUS`). Raise a limit with
+`applyMapping(rows, plan, adapter, ctx, { groupLimits: { maxGroupRows: 50_000 } })`, or with the
+server's `limits`. `toErrorBody` answers these 413 and 422.
+
+### Dates are never guessed
+
+`2026-09-05` is read as written. `05/09/2026` could be 5 September or 9 May, so it is an
+error unless something states the order: an entry's `dateOrder`, or the run's
+(`applyMapping(rows, plan, adapter, ctx, { dateOrder: 'DMY' })`). The entry wins. Pass a
+sample of rows to `suggestMapping(headers, adapter, { sample })` and it states the order for a
+column whose values settle it (a `31/08/2026` can only be day first).
+
+### Applying a plan in memory: `applyMapping`
+
+The same engine on rows you already hold, in a browser or in Node:
+
+```ts
+import { applyMapping, jsonSchemaAdapter, parseCsv, suggestMapping } from 'sheet-to-schema';
+
+const adapter = jsonSchemaAdapter({
+  $id: 'order',
+  type: 'object',
+  required: ['orderId'],
+  properties: {
+    orderId: { type: 'string', title: 'Order' },
+    placed: { type: 'string', format: 'date', title: 'Placed' },
+    tags: { type: 'array', title: 'Tags', items: { type: 'string' } },
+    items: {
+      type: 'array',
+      title: 'Item',
+      items: {
+        type: 'object',
+        properties: { sku: { type: 'string', title: 'SKU' }, qty: { type: 'integer', title: 'Qty' } },
+      },
+    },
+  },
+});
+
+const sheet = parseCsv(
+  'Order,Placed,Item 1 SKU,Item 1 Qty,Item 2 SKU,Item 2 Qty\n' +
+    'A-1,2026-09-05,PEN,2,INK,1\n' +
+    'A-2,2026-09-06,PAD,x,,\n',
+);
+
+// 1. A suggestion, for a person to check. Anything inferred is tagged `confidence: 'guess'`.
+const plan = suggestMapping(sheet.headers, adapter);
+
+// 2. Rows in, records out. The fourth argument is whatever context your adapter wants.
+const result = applyMapping(sheet.rows, plan, adapter, undefined);
+
+result.records;
+// [{ orderId: 'A-1', placed: '2026-09-05', items: [{ sku: 'PEN', qty: 2 }, { sku: 'INK', qty: 1 }] }]
+result.errors;
+// [{ row: 3, ref: 'items.0.qty', column: 3, code: 'CELL_FORMAT', message: '"x" is not a number', raw: 'x' }]
+```
+
+A row that fails is collected, not thrown, and its record is left out. `row` is the number
+the user sees in their spreadsheet: the header is row 1.
+
+## Adapters
+
+An adapter is the one thing that knows your schema. Two ship with the package:
+
+| Adapter | Use it when |
+| --- | --- |
+| `jsonSchemaAdapter(schema, options?)` | You have a JSON Schema. Types, formats, `enum`, `required`, nested objects, and arrays of objects or of scalars. |
+| `exampleJsonAdapter(sample, options?)` | You have one example record and no schema. Types are inferred from its values. |
+
+For anything else, implement `SchemaAdapter`: `id`, `adapterVersion`, and
+`targets({ slots, lang })`, which lists every place a value can go. Optional hooks let it read
+its own cells (`coerce`), finish a record (`finalize`) and check one (`validate`). That is how
+Dynamic Entity's form configs run on this engine.
+
 ## Problem codes
 
 | Prefix | Raised when | Examples |
@@ -605,11 +517,77 @@ main entry exports it from 1.2.0, for `readCsvFile`). Each code has the HTTP sta
 | `UNSUPPORTED_FORMAT` | 415 | The bytes are not a CSV or an `.xlsx`: a pre-2007 `.xls`, UTF-16 text, or (from 2.0) binary, meaning a NUL byte in the first 8 KB, as in an image or most PDFs. |
 | `ABORTED` | 499 | `runImport`'s `signal` aborted (2.0). `details` has `rowsRead`, `imported` and `failed`; `cause` is the signal's reason. |
 | `TIMEOUT` | 408 | `receiveUpload`: the upload sent nothing for `limits.idleTimeoutMs`, or ended before the file did. |
-| `UNSUPPORTED_RUNTIME` | (browser only) | `sheet-to-schema/browser` is asked to read a workbook where there is no `DecompressionStream` with `deflate-raw` (see the browser section for versions). A CSV is not affected. |
+| `UNSUPPORTED_RUNTIME` | (browser only) | `sheet-to-schema/browser` is asked to read a workbook where there is no `DecompressionStream` with `deflate-raw` (see [Reading files in the browser](#reading-files-in-the-browser-maintained-no-new-features) for versions). A CSV is not affected. |
 | `PEER_MISSING` | (answered as `INTERNAL`, 500) | An optional peer the call needs is not installed: `exceljs` for a workbook, `busboy` for an upload. `details.peer` names it. A server's client is told only `INTERNAL`. |
 | `GROUP_NOT_CONTIGUOUS` | 422 | A group's key comes back after its rows ended. `details` has the key and both rows. |
 | `GROUP_TOO_LARGE` | 413 | A group has more than `maxGroupRows` rows. |
 | `TOO_MANY_GROUPS` | 413 | More than `maxGroups` groups, or more than `maxGroupKeyBytes` of group keys. |
+
+## Limits
+
+Every limit has a finite default and is enforced while the file streams, never after it has
+been read. Pass `limits` (a partial `ImportLimits`) to `receiveUpload`, `previewSheet`,
+`runImport` or the readers to change one; `resolveLimits` fills in the rest, and ignores a value
+that is not a positive finite number. `DEFAULT_LIMITS` holds them all.
+
+| Limit | Default | Bounds | Enforced by |
+| --- | --- | --- | --- |
+| `maxBytes` | 10 MiB | the upload or file | every reader, `receiveUpload` |
+| `maxFields`, `maxFieldBytes`, `maxFieldNameBytes`, `maxFiles` | 16, 1 MiB, 200 B, 1 | multipart fields and files | `receiveUpload` |
+| `idleTimeoutMs` | 30 s | an upload that stops sending | `receiveUpload` |
+| `maxRows`, `maxColumns`, `maxCellLength` | 200,000, 512, 32,768 | the sheet | every reader |
+| `maxUncompressedBytes`, `maxCompressionRatio`, `maxZipEntries` | 200 MiB, 200, 512 | an `.xlsx`'s zip | the workbook readers |
+| `batchSize` | 500 | rows held and handed to `onBatch` at a time | `runImport` |
+| `maxReportedErrors` | 200 | errors and warnings retained (counts stay exact) | `runImport` |
+| `sampleRows` | 5 | rows in a preview's `sample` | `previewSheet` |
+| `maxGroupRows`, `maxGroups`, `maxGroupKeyBytes` | 10,000, 200,000, 8 MiB | grouping | `runImport`, `applyMapping` |
+
+A whole run has no time limit of its own: bound it with `signal: AbortSignal.timeout(ms)`.
+
+Known limitations of reading a file:
+
+- **Binary is recognised by a NUL byte in the first 8 KB.** That catches images, executables
+  and most PDFs, but a file with no NUL byte in its first 8 KB, such as some PDFs whose
+  opening objects are all text, is still read as CSV, into rows of nonsense that the mapping
+  then reports cell by cell. Check a file's type yourself first if that matters to you.
+- **The first sheet, header row 1.** A workbook's other sheets, and rows above the header, are
+  not read.
+
+## Reading files in the browser (maintained, no new features)
+
+The readers below are maintained, with fixes, and get no new features: new work goes to the
+server side. They read a file in a browser tab into exactly the grid `readSheet` reads on the
+server from the same bytes, with the same refusals, codes and messages.
+
+**CSV only: `readCsvFile`, from the main entry.** Nothing in its module graph asks for
+`exceljs`, so an app that never installed it builds:
+
+```ts
+import { applyMapping, decimalMarkFor, readCsvFile } from 'sheet-to-schema';
+
+const sheet = await readCsvFile(file, { filename: file.name });
+const result = applyMapping(sheet.rows, plan, adapter, undefined, { decimal: decimalMarkFor(sheet.delimiter) });
+```
+
+**CSV and `.xlsx`: `readSheetFile` from `sheet-to-schema/browser`** (`readXlsx` for a file
+known to be a workbook):
+
+```ts
+import { readSheetFile } from 'sheet-to-schema/browser';
+
+const sheet = await readSheetFile(file, { filename: file.name });
+```
+
+- **`exceljs` must be installed for a bundled app to build**, even one that never reads a
+  workbook: it is loaded with `import()` on the first workbook, but Angular's `ng build` and
+  webpack still resolve it. Without it, a workbook read fails with `PEER_MISSING`; an app that
+  reads only CSV uses `readCsvFile`.
+- **A workbook needs `DecompressionStream` with `deflate-raw`**: Chrome and Edge 103, Firefox
+  113, Safari 16.4, Node 20.12. Elsewhere a workbook fails with `UNSUPPORTED_RUNTIME`; a CSV
+  still reads.
+- **The limits are the server's** (`maxBytes`, `maxRows`, `maxColumns`, `maxCellLength`,
+  `maxZipEntries`). A workbook's zip is checked by what it declares; only the server also
+  checks what each entry inflates to.
 
 ## Licence
 

@@ -1,7 +1,7 @@
 {
   "name": "sheet-to-schema",
-  "version": "2.0.0",
-  "description": "Turn spreadsheet rows into records that fit a schema you already have. The main entry is browser-safe with no runtime dependencies; sheet-to-schema/node reads files and uploads as a stream.",
+  "version": "2.0.1",
+  "description": "A backend import engine for Node: streams CSV and .xlsx files, matches columns to your schema, validates rows, groups them into records, and runs large imports as background jobs. The main entry is dependency-free.",
   "main": "dist/index.js",
   "module": "dist/index.mjs",
   "types": "dist/index.d.ts",

@@ -41,6 +41,17 @@ Before submitting a pull request, ensure all gates pass:
   with `exceljs` not installed, and `/browser` with it external, stubbed, installed, and with its
   chunk failing to download; needs `npx playwright install chromium firefox webkit` once)
 
+## Scope
+
+sheet-to-schema is a backend import engine for Node.
+
+- **New features target the server side**: `sheet-to-schema/node` and the main entry's
+  matching, validation and grouping.
+- **The browser readers receive fixes only.** `readCsvFile` and `sheet-to-schema/browser` are
+  maintained, kept at parity with the server's readers, and get no new features.
+- **No UI packages in this repository.** A mapping screen or an upload widget belongs to the app,
+  or to a package of its own, such as Dynamic Entity's.
+
 ## Releases and dist-tags
 
 A `v*` tag runs `.github/workflows/release.yml` from the tagged commit, and

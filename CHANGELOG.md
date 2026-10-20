@@ -6,6 +6,26 @@ This project follows [Semantic Versioning](https://semver.org/spec/v2.0.0.html).
 
 ---
 
+## [2.0.1]
+
+### Documentation
+
+- **Positioned as a backend import engine for Node.** The README opens with what it does on a
+  server (streaming CSV and `.xlsx`, column matching, validation, grouping, background imports
+  with polling) and follows the order a server author reads in: install, server quick start, the
+  polling recipe, plans, adapters, problem codes, and a new **Limits** section that lists every
+  limit, its default and what enforces it.
+- The browser readers (`readCsvFile`, `sheet-to-schema/browser`) move to a short section near
+  the end, "Reading files in the browser (maintained, no new features)". They are unchanged,
+  and receive fixes only.
+- CONTRIBUTING: new features target the server side, the browser readers receive fixes only,
+  and there are no UI packages in this repository.
+- The package description on npm says the same.
+
+The code is 2.0.0's; only the version changes (`IMPORTER_VERSION` is `2.0.1`).
+
+---
+
 ## [2.0.0]
 
 sheet-to-schema becomes a set of functions: it reads, matches, validates and streams, and the
