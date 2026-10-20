@@ -115,7 +115,8 @@ In 1.x it refused such a plan unless you passed `grouping: true`.
   worded for 2.0 (grouping is off for this import); compare `reason`, never the message.
 - **Previews now suggest a group** where the first rows repeat an id-like key, as the browser's
   `suggestMapping(headers, adapter, { sample })` does. A client that sends the preview's
-  suggestion back unchanged now imports a grouped file grouped.
+  suggestion back unchanged now imports a grouped file grouped. A suggested group is always a
+  guess: show `suggestion.group` to the person for confirmation.
 - `group.contiguous: false` is still refused, either way, with `reason: 'non-contiguous'`.
 
 ## Binary files are refused

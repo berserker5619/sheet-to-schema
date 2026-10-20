@@ -11,14 +11,20 @@ This project follows [Semantic Versioning](https://semver.org/spec/v2.0.0.html).
 sheet-to-schema becomes a set of functions: it reads, matches, validates and streams, and the
 app owns routes, storage, jobs and queues. The recommended server pattern is background imports
 with polling (README, "Recipe: background imports with polling"). Upgrading is covered in
-[MIGRATING-2.0.md](MIGRATING-2.0.md), and the decisions in [docs/2.0-spec.md](docs/2.0-spec.md). First published as
-2.0.0-rc.1 under `next`. Dynamic Entity 3.x stays on 1.x, which is now published from the `1.x`
-branch under the `release-1.x` dist-tag.
+[MIGRATING-2.0.md](MIGRATING-2.0.md), and the decisions in [docs/2.0-spec.md](docs/2.0-spec.md). Dynamic Entity 3.x stays on
+1.x, which is published from the `1.x` branch under the `release-1.x` dist-tag (1.3.1).
 
-**Since 2.0.0-rc.1** (from its test round, docs/2.0-rc-feedback.md): previews suggest grouping;
-`readCsvFile` names a zip that is not a workbook as the other readers do; the `grouping: false`
-refusal is worded for 2.0; the polling recipe deletes a job's file however the job ends, shows
-`rowsRead` beside an approximate bar, and says what to do on Windows; `UNKNOWN_ENTITY` is removed.
+**The release-candidate series** (docs/2.0-rc-feedback.md). 2.0.0-rc.1 (2026-10-19) carried
+the removals, `signal`, `onProgress`, grouping on by default, the binary refusal, the
+`maxFieldNameBytes` fix and the removal of `UNKNOWN_ENTITY`. Its test round, against the
+published package in fresh projects (Express 4 and 5, plain `node:http`, the polling recipe end
+to end, CommonJS, ESM, Jest, strict TypeScript, three browsers), found one Medium and four Low
+issues. 2.0.0-rc.2 (2026-10-20) fixed them: previews suggest grouping; `readCsvFile` names a zip
+that is not a workbook as the other readers do; the `grouping: false` refusal is worded for 2.0;
+the polling recipe cleans up its files deliberately, shows `rowsRead` beside an approximate bar,
+and covers Windows. The re-run found nothing new. 2.0.0 is rc.2's code with the version and
+the documentation finalised: the recipe keeps the file after any validation that finishes, and
+the README says a suggested group is always a guess.
 
 ### Removed
 
@@ -80,9 +86,9 @@ refusal is worded for 2.0; the polling recipe deletes a job's file however the j
   `This is a zip archive that is not an Excel workbook. Upload an .xlsx or .csv file.` It reads
   the zip's directory for a workbook part; a real workbook still gets its own message, pointing
   at `readSheetFile`.
-- **The polling recipe** (rc.2): every job deletes its file when it ends, in a `finally` (done,
-  cancelled or failed), except a validation that passed, whose file the import reads next; the
-  sweep is for crashes and uploads nobody imported. It says how to keep a file deliberately for a
+- **The polling recipe** (rc.2, final in 2.0.0): a validation that finishes keeps the file, with
+  or without row errors, since the user may import anyway; an import that finishes, a cancel and
+  a failure delete it, in a `finally`; the sweep removes abandoned files. It says how to keep a file deliberately for a
   retry, that the progress bar is approximate (`bytesRead` includes read-ahead) with `rowsRead`
   shown beside it, and that on Windows the file modes are ignored, so the folder's ACL must do
   their job.

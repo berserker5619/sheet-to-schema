@@ -17,7 +17,7 @@ validates and streams. Your app owns the routes, the storage, the jobs and the q
 - **The same reader on both sides.** `sheet-to-schema/browser` reads a CSV, TSV or `.xlsx`
   file in a browser into exactly the rows the server reads from the same bytes.
 
-> **Status: 2.0 release candidate.** Coming from 1.x: read
+> **Status: stable (2.0.0).** Coming from 1.x: read
 > [MIGRATING-2.0.md](https://github.com/berserker5619/sheet-to-schema/blob/main/MIGRATING-2.0.md).
 > It is the import engine of [Dynamic Entity](https://github.com/berserker5619/Dynamic-Entity#readme),
 > extracted so it can be used without it; Dynamic Entity 3.x stays on the 1.x line, which is
@@ -82,6 +82,12 @@ if (check.failed === 0) {
 
 declare function upsertOrder(order: Record<string, unknown>): Promise<void>;
 ```
+
+**A group in a suggestion is always a guess.** When the rows repeat an id-like key, the
+suggestion carries `group` (one record per key, collecting the array that varies) and marks the
+entries it collects `confidence: 'guess'`. The plan has no confidence of its own for the group,
+so a UI should always present `suggestion.group` for the person to confirm or remove: the same
+file read as one record per row is a different import.
 
 `previewSheet` and `runImport` take a Node stream, a `Buffer`, or any iterable of bytes, and
 never hold the file: memory is bounded by `limits.batchSize`. The format is decided by the
@@ -391,10 +397,11 @@ The pieces, all in the code below:
    starts.
 6. **`onBatch` is safe to repeat.** A job that failed or was cancelled part-way is run again, so
    it upserts by a key rather than inserting.
-7. **Clean up.** Every job deletes the file when it ends, in a `finally`: done, cancelled or
-   failed. The one exception is a validation that passed, whose file the import reads next. The
-   hourly sweep is for what a crash leaves behind, and for uploads nobody imported, once they
-   are past their expiry.
+7. **Clean up.** A validation that finishes keeps the file, with or without row errors: the
+   user may fix nothing and import the valid rows anyway, and the import reads that file. Every
+   other end deletes it, in a `finally`: an import that finishes, a cancel, a failure. The
+   hourly sweep removes abandoned files, uploads validated and never imported or left behind by
+   a crash, once they are past their expiry.
 
 **To let a user retry** a cancelled or failed import without uploading again, keep the file on
 purpose: skip `forget` for that outcome and let `expiresAt` bound how long it waits, so the
@@ -513,8 +520,9 @@ export function start(uploadId: string, kind: Job['kind'], plan: unknown): { job
       },
     )
     .finally(() => {
-      // However the job ended, its file goes: the user's data is kept no longer than it is used.
-      // The one exception is a validation that passed, whose file the import reads next.
+      // A validation that finished keeps the file, row errors or not: the user may import anyway,
+      // and the import reads it. Any other end deletes it: an import that finished, a cancel, a
+      // failure. The user's data is kept no longer than it is used; the sweep takes the rest.
       if (!(kind === 'validate' && job.state === 'done')) void forget(stored.id);
     });
   return { jobId: job.id };

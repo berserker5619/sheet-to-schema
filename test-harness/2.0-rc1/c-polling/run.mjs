@@ -207,6 +207,26 @@ await check('status shows rowsRead beside the approximate bar, and they agree at
   console.log(`     bar ahead of rows by up to ${(Math.max(...mid) * 100).toFixed(1)} points mid-run`);
 });
 
+await check('a validation with row errors keeps the file; the import then reads it and deletes it', async () => {
+  let text = 'Order,Total\r\n';
+  for (let i = 0; i < 2000; i++) text += `O-${i},${i % 10 === 0 ? 'not a number' : i}\r\n`;
+  const id = await uploadTo(url, text);
+  globalThis.__onBatch = async () => {};
+  const validation = await until(recipe, recipe.start(id, 'validate', PLAN).jobId);
+  assert.equal(validation.state, 'done');
+  assert.equal(validation.result.failed, 200);
+  await sleep(50);
+  assert.ok(files().includes(id), 'the file went after a validation with row errors');
+  const written = [];
+  globalThis.__onBatch = async records => void written.push(...records);
+  const imported = await until(recipe, recipe.start(id, 'import', PLAN).jobId);
+  assert.equal(imported.state, 'done');
+  assert.equal(imported.result.imported, 1800);
+  assert.equal(written.length, 1800);
+  await sleep(50);
+  assert.ok(!files().includes(id), 'the file is still there after the import');
+});
+
 await check('a crash mid-job leaves the file; the expiry sweep removes it', async () => {
   const crashDir = mkdtempSync(join(tmpdir(), 's2s-crash-'));
   const child = spawn(process.execPath, ['run.mjs', 'crash-child', crashDir, '0'], { stdio: ['ignore', 'pipe', 'inherit'] });
