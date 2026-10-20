@@ -168,6 +168,45 @@ await check('cancel mid-import: the uploaded file is deleted', async () => {
   assert.ok(!files().includes(cancelled.id), `the cancelled job's file is still on disk (${cancelled.id})`);
 });
 
+await check('a failed import (its writer throws): failed, IMPORT_FAILED, the file deleted', async () => {
+  const id = await uploadTo(url);
+  let calls = 0;
+  globalThis.__onBatch = async () => {
+    if (++calls === 2) throw new Error('the database went away');
+  };
+  const { jobId } = recipe.start(id, 'import', PLAN);
+  const final = await until(recipe, jobId);
+  assert.equal(final.state, 'failed');
+  assert.equal(final.error.code, 'IMPORT_FAILED');
+  assert.ok(!JSON.stringify(final.error).includes('database'), 'the cause leaked into the status');
+  await sleep(50);
+  assert.ok(!files().includes(id), `the failed job's file is still on disk (${id})`);
+});
+
+await check('a cancelled validation: the file deleted too', async () => {
+  const id = await uploadTo(url);
+  globalThis.__onBatch = async () => {};
+  const { jobId } = recipe.start(id, 'validate', PLAN);
+  recipe.cancel(jobId);
+  const final = await until(recipe, jobId);
+  assert.equal(final.state, 'cancelled');
+  await sleep(50);
+  assert.ok(!files().includes(id), `the cancelled validation's file is still on disk (${id})`);
+});
+
+await check('status shows rowsRead beside the approximate bar, and they agree at the end', async () => {
+  const id = await uploadTo(url);
+  globalThis.__onBatch = async () => sleep(1);
+  const seen = [];
+  const { jobId } = recipe.start(id, 'import', PLAN);
+  const final = await until(recipe, jobId, status => seen.push([status.progress, status.rowsRead]));
+  assert.equal(final.rowsRead, ROWS);
+  assert.ok(seen.some(([, rows]) => rows > 0 && rows < ROWS), 'rowsRead never shown mid-run');
+  for (let i = 1; i < seen.length; i++) assert.ok(seen[i][1] >= seen[i - 1][1], 'rowsRead went back');
+  const mid = seen.filter(([p, rows]) => rows > 0 && rows < ROWS).map(([p, rows]) => p - rows / ROWS);
+  console.log(`     bar ahead of rows by up to ${(Math.max(...mid) * 100).toFixed(1)} points mid-run`);
+});
+
 await check('a crash mid-job leaves the file; the expiry sweep removes it', async () => {
   const crashDir = mkdtempSync(join(tmpdir(), 's2s-crash-'));
   const child = spawn(process.execPath, ['run.mjs', 'crash-child', crashDir, '0'], { stdio: ['ignore', 'pipe', 'inherit'] });

@@ -71,6 +71,19 @@ for (const [kind, file, filename] of [['CSV', csv, 'people.csv'], ['xlsx', xlsx,
     assert.equal(body.rowsRead, 3);
   });
 }
+await check('preview round trip: the preview\'s suggestion, sent back unchanged, validates and imports', async () => {
+  const preview = await post('preview', csv, 'people.csv', { withPlan: false });
+  assert.equal(preview.status, 200);
+  const roundTrip = JSON.stringify(preview.body.suggestion);
+  const validate = await post('validate', csv, 'people.csv', { planText: roundTrip });
+  assert.equal(validate.status, 200, JSON.stringify(validate.body));
+  assert.equal(validate.body.imported, 2);
+  const imported = await post('import', xlsx, 'people.xlsx', { planText: roundTrip });
+  assert.equal(imported.status, 200, JSON.stringify(imported.body));
+  assert.equal(imported.body.written, true);
+  assert.equal(imported.body.imported, 2);
+  assert.deepEqual(imported.body.planProblems.filter(p => p.level === 'error'), []);
+});
 await check('a plan that is not JSON: 400 INVALID_PLAN', async () => {
   const { status, body } = await post('import', csv, 'people.csv', { planText: 'not json' });
   assert.equal(status, 400, JSON.stringify(body));

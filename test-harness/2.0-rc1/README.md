@@ -44,7 +44,7 @@ before the module loads, and the crashed upload is aged with `utimes`.
 
 ## d. Grouping by default
 
-`d-grouping/run.mjs`, from `$W/d-grouping`, reads `../fixtures/order.*`.
+`d-grouping/run.mjs`, from `$W/d-grouping`, reads `../fixtures/order.*`; `roundtrip.mjs` (rc.2) sends the preview's suggestion back unchanged.
 
 ## e. Binary files
 
