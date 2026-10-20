@@ -15,6 +15,11 @@ with polling (README, "Recipe: background imports with polling"). Upgrading is c
 2.0.0-rc.1 under `next`. Dynamic Entity 3.x stays on 1.x, which is now published from the `1.x`
 branch under the `release-1.x` dist-tag.
 
+**Since 2.0.0-rc.1** (from its test round, docs/2.0-rc-feedback.md): previews suggest grouping;
+`readCsvFile` names a zip that is not a workbook as the other readers do; the `grouping: false`
+refusal is worded for 2.0; the polling recipe deletes a job's file however the job ends, shows
+`rowsRead` beside an approximate bar, and says what to do on Windows; `UNKNOWN_ENTITY` is removed.
+
 ### Removed
 
 - **`createImportRouter`**, with `ImportRouterOptions` and its @internal `param` and
@@ -47,6 +52,7 @@ branch under the `release-1.x` dist-tag.
 - `SERVER_FEATURES` in the main entry, next to `planForServer`.
 - `templateOf` and `templateFilename` stay in `/node`, now beside `writeTemplate`, for an app
   serving its own template route.
+- `SUGGESTION_SAMPLE_ROWS` in `/node` (rc.2): the rows a preview's suggestion is made from.
 
 ### Changed
 
@@ -58,6 +64,28 @@ branch under the `release-1.x` dist-tag.
   `readCsvFile`, all alike. In 1.x it was read as CSV. Every CSV and workbook 1.x read still
   reads exactly as 1.3.0 read it, which is checked against grids 1.3.0 itself wrote.
   Classification now looks at up to 8 KB before the first row (it was 8 bytes).
+- **Previews suggest grouping** (rc.2). `previewSheet` hands its first rows
+  (`SUGGESTION_SAMPLE_ROWS`, 100) to `suggestMapping`, as the browser path does with
+  `suggestMapping(headers, adapter, { sample })`, so the server and the browser propose the same
+  plan for one file: a `group` where the rows repeat an id-like key, a date order a column's
+  values settle, and matches by words. Each is a guess; the entries a group collects have
+  `confidence: 'guess'`. A preview's suggestion sent back unchanged now imports a grouped file
+  grouped; before, it was made from the headers alone and imported one record per row. The
+  preview's `slots` are sized the same way.
+- **The `grouping: false` refusal is worded for 2.0** (rc.2): `GROUPING_NOT_STREAMED` now says
+  grouping is turned off for this import, and to turn it on, import in the browser, or remove
+  `group`. The code (`INVALID_PLAN`, `PLAN_GROUP`) and `reason` (`grouping-disabled`) are
+  unchanged; compare those, never the message.
+- **`readCsvFile` names a zip that is not a workbook as the other readers do** (rc.2):
+  `This is a zip archive that is not an Excel workbook. Upload an .xlsx or .csv file.` It reads
+  the zip's directory for a workbook part; a real workbook still gets its own message, pointing
+  at `readSheetFile`.
+- **The polling recipe** (rc.2): every job deletes its file when it ends, in a `finally` (done,
+  cancelled or failed), except a validation that passed, whose file the import reads next; the
+  sweep is for crashes and uploads nobody imported. It says how to keep a file deliberately for a
+  retry, that the progress bar is approximate (`bytesRead` includes read-ahead) with `rowsRead`
+  shown beside it, and that on Windows the file modes are ignored, so the folder's ACL must do
+  their job.
 - **`receiveUpload` enforces `limits.maxFieldNameBytes`** on every part, refusing a longer name
   with `TOO_LARGE`. busboy applies its `fieldNameSize` to urlencoded bodies only, so 1.x
   accepted any part name in a multipart upload, as 1.3.0 still does.

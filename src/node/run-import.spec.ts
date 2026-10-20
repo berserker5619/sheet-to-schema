@@ -1,7 +1,7 @@
 import { applyMapping, jsonSchemaAdapter, parseCsv, slotsFor, suggestMapping } from 'sheet-to-schema';
 import { ImportError } from './errors';
 import { MAGIC_BYTES } from '../shared/sheet-format';
-import { GROUPING_NOT_STREAMED, NON_CONTIGUOUS_NOT_STREAMED, previewSheet, runImport, type OnBatch } from './run-import';
+import { GROUPING_NOT_STREAMED, NON_CONTIGUOUS_NOT_STREAMED, previewSheet, runImport, SUGGESTION_SAMPLE_ROWS, type OnBatch } from './run-import';
 import { chunked, collectedHeap, CSV_TEXT, EMPLOYEES, generatedCsv, HEADERS, PLAN, trackedStream } from './sheet.fixtures';
 
 /** Collect what `onBatch` was handed, for the tests that are about the records themselves. */
@@ -492,13 +492,23 @@ describe('previewSheet', () => {
     );
   });
 
-  it('suggests exactly what the browser transport suggests for the same headers', async () => {
-    // Both suggest from the same headers over the same adapter. Asserted rather than assumed:
-    // a suggestion that differed by side would put the same column into a different field
-    // depending on where the file was uploaded.
-    const browser = suggestMapping(parseCsv(CSV_TEXT).headers, EMPLOYEES);
+  it('suggests exactly what the browser path suggests for the same file: headers and sample rows', async () => {
+    // Both suggest from the same headers and rows over the same adapter (2.0 rc.2: the preview
+    // passes its rows too). Asserted rather than assumed: a suggestion that differed by side
+    // would put the same column into a different field depending on where the file was read.
+    const sheet = parseCsv(CSV_TEXT);
+    const browser = suggestMapping(sheet.headers, EMPLOYEES, { sample: sheet.rows });
     const preview = await previewSheet({ stream: chunked(CSV_TEXT), adapter: EMPLOYEES });
     expect(preview.suggestion).toEqual(browser);
+  });
+
+  it('suggests from the first SUGGESTION_SAMPLE_ROWS rows, and no more', async () => {
+    let text = 'Name\r\n';
+    for (let i = 0; i < SUGGESTION_SAMPLE_ROWS + 50; i++) text += `N${i}\r\n`;
+    const sheet = parseCsv(text);
+    const preview = await previewSheet({ stream: chunked(text), adapter: EMPLOYEES });
+    expect(preview.rowCount).toBe(SUGGESTION_SAMPLE_ROWS + 50);
+    expect(preview.suggestion).toEqual(suggestMapping(sheet.headers, EMPLOYEES, { sample: sheet.rows.slice(0, SUGGESTION_SAMPLE_ROWS) }));
   });
 
   it('caps the sample without capping the count', async () => {
@@ -622,8 +632,11 @@ describe('a plan that groups rows, with grouping: false', () => {
     expect(failure).toMatchObject({ code: 'INVALID_PLAN', status: 400 });
     expect((failure as ImportError).message).toBe(GROUPING_NOT_STREAMED);
     expect((failure as ImportError).details).toEqual([{ level: 'error', code: 'PLAN_GROUP', path: 'group', message: GROUPING_NOT_STREAMED, reason: 'grouping-disabled' }]);
-    expect(GROUPING_NOT_STREAMED).toContain('does not group rows into records yet');
-    expect(GROUPING_NOT_STREAMED).toContain('browser import does');
+    // Worded for 2.0 (rc.2): grouping is off for this import, by the caller's choice.
+    expect(GROUPING_NOT_STREAMED).toContain('turned off for this import');
+    expect(GROUPING_NOT_STREAMED).toContain('remove grouping: false');
+    expect(GROUPING_NOT_STREAMED).toContain('in the browser');
+    expect(GROUPING_NOT_STREAMED).not.toMatch(/server version|yet/);
   });
 
   it('is refused before a row is read, and the request body is closed', async () => {
@@ -682,18 +695,32 @@ describe('what the run reports', () => {
     expect(preview.suggestion.entries.map(entry => entry.ref)).toEqual(['name', ...[0, 1, 2, 3, 4].map(n => `phones.${n}.number`)]);
   });
 
-  it('suggests from the headers alone, so it never proposes a group this runner would refuse', async () => {
+  it('suggests a group where the rows settle one, as a guess, and that suggestion imports grouped (2.0 rc.2)', async () => {
     const orders = jsonSchemaAdapter({
       $id: 'order',
       type: 'object',
       properties: { orderId: { type: 'string', title: 'Order ID' }, items: { type: 'array', items: { type: 'object', properties: { sku: { type: 'string', title: 'SKU' } } } } },
     });
-    const preview = await previewSheet({ stream: chunked('Order ID,SKU\r\nA,S1\r\nA,S2\r\n'), adapter: orders });
-    expect(preview.suggestion).not.toHaveProperty('group');
-    // And the suggestion it does make is one this runner imports.
-    const result = await runImport({ stream: chunked('Order ID,SKU\r\nA,S1\r\nA,S2\r\n'), plan: preview.suggestion, adapter: orders, ctx: undefined });
+    const text = 'Order ID,SKU\r\nA,S1\r\nA,S2\r\n';
+    const preview = await previewSheet({ stream: chunked(text), adapter: orders });
+    expect(preview.suggestion.group).toEqual({ key: [0], collect: ['items'], contiguous: true });
+    // What the group collects is marked as a guess, for the user to confirm.
+    expect(preview.suggestion.entries.find(entry => entry.ref === 'items.sku')).toMatchObject({ column: 1, confidence: 'guess' });
+    // Sent back unchanged, it is a plan this runner imports grouped, by default.
+    const records: Record<string, unknown>[] = [];
+    const result = await runImport({ stream: chunked(text), plan: preview.suggestion, adapter: orders, ctx: undefined, onBatch: batch => void records.push(...batch) });
     expect(result.planProblems.filter(problem => problem.level === 'error')).toEqual([]);
-    expect(result.imported).toBe(2);
+    expect(records).toEqual([{ orderId: 'A', items: [{ sku: 'S1' }, { sku: 'S2' }] }]);
+  });
+
+  it('suggests no group where no key repeats', async () => {
+    const orders = jsonSchemaAdapter({
+      $id: 'order',
+      type: 'object',
+      properties: { orderId: { type: 'string', title: 'Order ID' }, items: { type: 'array', items: { type: 'object', properties: { sku: { type: 'string', title: 'SKU' } } } } },
+    });
+    const preview = await previewSheet({ stream: chunked('Order ID,SKU\r\nA,S1\r\nB,S2\r\n'), adapter: orders });
+    expect(preview.suggestion).not.toHaveProperty('group');
   });
 });
 

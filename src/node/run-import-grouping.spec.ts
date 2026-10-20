@@ -8,7 +8,7 @@ import { readFileSync } from 'node:fs';
 import { join } from 'node:path';
 import ExcelJS from 'exceljs';
 import { applyMapping, ImportFailure, jsonSchemaAdapter, parseCsv, suggestMapping, type ImportResult, type SchemaAdapter } from 'sheet-to-schema';
-import { runImport, type BatchInfo } from './run-import';
+import { previewSheet, runImport, type BatchInfo } from './run-import';
 import { chunked, collectedHeap } from './sheet.fixtures';
 
 // ─── Fixtures ─────────────────────────────────────────────────────────────────
@@ -136,6 +136,27 @@ function comparable(records: Record<string, unknown>[], result: { errors: unknow
 const inMemory = (c: Case): ImportResult => applyMapping(parseCsv(c.text).rows, c.plan, c.adapter, undefined);
 
 // ─── Parity ───────────────────────────────────────────────────────────────────
+
+describe('the order fixture: a preview\'s suggestion, sent back unchanged, imports grouped (2.0 rc.2)', () => {
+  it('as CSV and as a workbook, giving what applyMapping gives with the same plan', async () => {
+    for (const [stream, filename] of [[Buffer.from(orderText), 'order.csv'], [await xlsxOf(orderText), 'order.xlsx']] as const) {
+      const preview = await previewSheet({ stream, filename, adapter: orderAdapter });
+      expect(preview.suggestion.group?.key).toEqual([0]);
+      expect(preview.suggestion.group?.collect).toContain('items');
+
+      const records: Record<string, unknown>[] = [];
+      const result = await runImport({ stream, filename, plan: preview.suggestion, adapter: orderAdapter, ctx: undefined, onBatch: batch => void records.push(...batch) });
+      const memory = applyMapping(orderSheet.rows, preview.suggestion, orderAdapter, undefined);
+      expect(result.rowsRead).toBe(orderSheet.rows.length);
+      expect(records.length).toBe(memory.records.length);
+      expect(records.length).toBeLessThan(orderSheet.rows.length);
+      expect(JSON.parse(JSON.stringify(records))).toEqual(JSON.parse(JSON.stringify(memory.records)));
+      expect(result.errorCount).toBe(memory.errors.length);
+      // One record per order, its items gathered.
+      expect(records.every(record => Array.isArray(record['items']))).toBe(true);
+    }
+  });
+});
 
 describe('grouping is on by default (2.0, D4)', () => {
   const orders = jsonSchemaAdapter({

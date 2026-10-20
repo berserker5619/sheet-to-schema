@@ -167,7 +167,7 @@ export interface ImportRunResult {
 
 /** What a server tells a client whose plan groups rows, when it runs with `grouping: false` (1.0's refusal). */
 export const GROUPING_NOT_STREAMED =
-  'This server version does not group rows into records yet. The browser import does: import this file there, or remove "group" from the plan.';
+  'Grouping rows into records is turned off for this import. Turn it on (remove grouping: false), import this file in the browser, or remove "group" from the plan.';
 
 /**
  * What a server with grouping on tells a client whose plan groups rows that are not together
@@ -406,12 +406,24 @@ export interface PreviewSheetOptions<TMeta = unknown, TCtx = unknown> {
   limits?: Partial<ImportLimits>;
 }
 
+/**
+ * Rows a preview hands the suggester, from the top of the file. Enough for a key to repeat in
+ * a file of a few items per record; held while the rest is counted, so it is a bound, not a
+ * limit to raise.
+ */
+export const SUGGESTION_SAMPLE_ROWS = 100;
+
 /** What a first look at an uploaded file yields. */
 export interface SheetPreview {
   headers: string[];
   /** The first few rows as text, for the mapping screen to show under each column. */
   sample: string[][];
-  /** Every inferred match is tagged `guess`. */
+  /**
+   * Made from the headers and the first `SUGGESTION_SAMPLE_ROWS` rows, as
+   * `suggestMapping(headers, adapter, { sample })` makes it in a browser: it may propose a
+   * `group`, a date order and matches by words. Every inferred match is tagged `guess`, including
+   * the entries a proposed group collects.
+   */
   suggestion: MappingPlan;
   /** Data rows in the file, which the whole stream is read to count. */
   rowCount: number;
@@ -430,21 +442,27 @@ export interface SheetPreview {
  * also means every limit applies to a preview exactly as it applies to an import: a preview
  * endpoint that skipped them would be the cheapest way in.
  *
- * The suggestion is made from the headers alone, which is what a browser makes of them. It is
- * not given the sample rows, with which it would propose a group (spec §8): a group is the
- * user's to confirm on the mapping screen, and a preview is not that screen.
+ * The suggestion is made from the headers and the first rows (2.0), as the browser path makes it
+ * with `suggestMapping(headers, adapter, { sample })`, so the two propose the same plan for one
+ * file: a group where the rows repeat an id-like key, a date order a column's values settle,
+ * matches by words. Each is a `guess` for the user to confirm on the mapping screen. Before 2.0 it
+ * was made from the headers alone and never proposed a group, so a preview's suggestion sent back
+ * unchanged imported a grouped file one record per row.
  */
 export async function previewSheet<TMeta, TCtx>(options: PreviewSheetOptions<TMeta, TCtx>): Promise<SheetPreview> {
   const limits = resolveLimits(options.limits);
   const sheet = await readSheet({ stream: options.stream, filename: options.filename, limits });
 
   const sample: string[][] = [];
+  /** Typed, as the suggester reads cells: a date cell settles a date order as a `Date`. */
+  const suggestFrom: unknown[][] = [];
   let rowCount = 0;
 
   try {
     for await (const row of sheet.rows) {
       rowCount++;
       if (sample.length < limits.sampleRows) sample.push(row.map(cellText));
+      if (suggestFrom.length < SUGGESTION_SAMPLE_ROWS) suggestFrom.push(row);
     }
   } catch (error) {
     destroySource(options.stream);
@@ -455,9 +473,9 @@ export async function previewSheet<TMeta, TCtx>(options: PreviewSheetOptions<TMe
     headers: sheet.headers,
     sample,
     rowCount,
-    suggestion: suggestMapping(sheet.headers, options.adapter, { lang: options.lang }),
+    suggestion: suggestMapping(sheet.headers, options.adapter, { lang: options.lang, sample: suggestFrom }),
     format: sheet.format,
     ...(sheet.delimiter ? { delimiter: sheet.delimiter } : {}),
-    slots: slotsFor(sheet.headers, options.adapter, undefined, { lang: options.lang }),
+    slots: slotsFor(sheet.headers, options.adapter, undefined, { lang: options.lang, sample: suggestFrom }),
   };
 }

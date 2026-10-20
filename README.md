@@ -329,7 +329,7 @@ Functions, not routes: the app owns its routes, storage and jobs, and calls thes
 | --- | --- |
 | `receiveUpload(request, limits)` | One file and the fields before it out of a multipart request, streamed |
 | `readPlanField(fields)` | The JSON `plan` field, refused with `INVALID_PLAN` when missing or not JSON |
-| `previewSheet({ stream, adapter })` | Headers, a sample, a row count and a suggested plan |
+| `previewSheet({ stream, adapter })` | Headers, a sample, a row count and a suggested plan, made from the first rows as in a browser, so it proposes a group where the rows settle one |
 | `runImport({ stream, plan, adapter, ctx, onBatch })` | The import, a batch at a time; without `onBatch`, a validation that writes nothing |
 | `writeTemplate({ sheet, format, out })`, `templateOf`, `templateFilename` | A blank sheet with the right headers |
 | `toErrorBody(error)` | Anything thrown as a status and a body that says nothing about internals |
@@ -383,13 +383,26 @@ The pieces, all in the code below:
 2. **Preview** with `previewSheet`, reading the stored file.
 3. **Validate and import as background jobs** with `runImport` over the stored file. Validation
    is the same pipeline with an `onBatch` that writes nothing.
-4. **Progress** is `bytesRead / size`, from `onProgress`.
+4. **Progress** is `bytesRead / size`, from `onProgress`. The bar is approximate: `bytesRead`
+   counts what the reader has pulled from the file, read-ahead included, so it runs a little
+   ahead of the rows and moves in steps of the stream's chunks. Show `rowsRead` beside it; that
+   is the exact count.
 5. **Cancel** with an `AbortController`. The batch being written finishes, and no new batch
    starts.
 6. **`onBatch` is safe to repeat.** A job that failed or was cancelled part-way is run again, so
    it upserts by a key rather than inserting.
-7. **Clean up.** The file is deleted after the import, and an hourly sweep deletes anything past
-   its expiry: uploads nobody imported, or files left behind by a crash.
+7. **Clean up.** Every job deletes the file when it ends, in a `finally`: done, cancelled or
+   failed. The one exception is a validation that passed, whose file the import reads next. The
+   hourly sweep is for what a crash leaves behind, and for uploads nobody imported, once they
+   are past their expiry.
+
+**To let a user retry** a cancelled or failed import without uploading again, keep the file on
+purpose: skip `forget` for that outcome and let `expiresAt` bound how long it waits, so the
+sweep still removes it. Do it deliberately, and tell the user how long their file is kept.
+
+**On Windows**, the modes below (`0o700`, `0o600`) are ignored: Node creates the files readable
+by any account that can read the folder. Give the recipe a dedicated folder whose permissions
+(its ACL) admit only the account the server runs as.
 
 Wire each exported function to a route of your own, behind your authentication:
 `POST /uploads` → `upload`, `GET /uploads/:id/preview` → `preview`,
@@ -416,6 +429,7 @@ const adapter = jsonSchemaAdapter({
 const limits = resolveLimits({ maxBytes: 200 * 1024 * 1024, maxRows: 2_000_000 });
 
 // Private storage: outside anything a web server serves, readable by this process only.
+// (On Windows the modes are ignored; restrict the folder's ACL instead.)
 const UPLOADS = process.env.IMPORT_DIR ?? '/var/lib/myapp/imports';
 const TTL_MS = 24 * 60 * 60 * 1000;
 
@@ -431,8 +445,10 @@ interface Job {
   id: string;
   kind: 'validate' | 'import';
   state: 'running' | 'done' | 'failed' | 'cancelled';
-  /** 0 to 1: bytes read over the file's size. */
+  /** 0 to 1: bytes read over the file's size. Approximate: it includes the reader's read-ahead. */
   progress: number;
+  /** Rows read so far: the exact count, to show beside the bar. */
+  rowsRead: number;
   result?: ImportRunResult;
   error?: { code: string; message: string };
   controller: AbortController;
@@ -469,7 +485,7 @@ export async function preview(uploadId: string) {
 /** POST /uploads/:id/validate or /import, with the plan: starts a job and answers at once. */
 export function start(uploadId: string, kind: Job['kind'], plan: unknown): { jobId: string } {
   const stored = storedFile(uploadId);
-  const job: Job = { id: randomUUID(), kind, state: 'running', progress: 0, controller: new AbortController() };
+  const job: Job = { id: randomUUID(), kind, state: 'running', progress: 0, rowsRead: 0, controller: new AbortController() };
   jobs.set(job.id, job);
 
   runImport({
@@ -482,20 +498,25 @@ export function start(uploadId: string, kind: Job['kind'], plan: unknown): { job
     signal: job.controller.signal,
     // Validation is the same pipeline with an onBatch that writes nothing.
     onBatch: kind === 'import' ? upsertOrders : () => {},
-    onProgress: ({ bytesRead }) => {
+    onProgress: ({ bytesRead, rowsRead }) => {
       job.progress = stored.size ? bytesRead / stored.size : 1;
+      job.rowsRead = rowsRead;
     },
-  }).then(
-    result => {
-      Object.assign(job, { state: 'done', progress: 1, result });
-      // Imported: the file has done its job. A validated file stays for the import.
-      if (kind === 'import') void forget(stored.id);
-    },
-    (error: unknown) => {
-      const { body } = toErrorBody(error);
-      Object.assign(job, { state: body.error.code === 'ABORTED' ? 'cancelled' : 'failed', error: body.error });
-    },
-  );
+  })
+    .then(
+      result => {
+        Object.assign(job, { state: 'done', progress: 1, rowsRead: result.rowsRead, result });
+      },
+      (error: unknown) => {
+        const { body } = toErrorBody(error);
+        Object.assign(job, { state: body.error.code === 'ABORTED' ? 'cancelled' : 'failed', error: body.error });
+      },
+    )
+    .finally(() => {
+      // However the job ended, its file goes: the user's data is kept no longer than it is used.
+      // The one exception is a validation that passed, whose file the import reads next.
+      if (!(kind === 'validate' && job.state === 'done')) void forget(stored.id);
+    });
   return { jobId: job.id };
 }
 

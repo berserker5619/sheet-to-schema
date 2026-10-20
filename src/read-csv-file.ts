@@ -51,12 +51,47 @@ export async function readCsvFile(input: SheetFileInput, options: ReadCsvFileOpt
   const limits = resolveLimits(options.limits);
   const bytes = await bytesOf(input, limits.maxBytes, 'readCsvFile');
   if (detectFormat(bytes.subarray(0, MAGIC_BYTES)) === 'xlsx') {
+    // Any zip starts `PK`. One with no workbook part is a different kind of file, and is called
+    // what `/node` and `/browser` call it (`shared/zip.ts`), not a workbook to read elsewhere.
+    if (!holdsWorkbookPart(bytes)) {
+      throw new ImportError('UNSUPPORTED_FORMAT', 'This is a zip archive that is not an Excel workbook. Upload an .xlsx or .csv file.');
+    }
     throw new ImportError(
       'UNSUPPORTED_FORMAT',
       'This is an .xlsx workbook. Read it with readSheetFile from sheet-to-schema/browser, or save it as CSV.',
     );
   }
   return csvGrid(bytes, limits, options.filename);
+}
+
+/**
+ * Whether a zip's central directory names `xl/workbook.xml`, the part every workbook has. Read
+ * from the directory, so nothing is inflated. An archive whose directory cannot be found is
+ * given the benefit of the doubt: it is called a workbook, as before.
+ */
+function holdsWorkbookPart(bytes: Uint8Array): boolean {
+  const view = new DataView(bytes.buffer, bytes.byteOffset, bytes.byteLength);
+  // The end-of-central-directory record: 22 bytes, then a comment of up to 65,535.
+  let end = -1;
+  for (let at = bytes.length - 22; at >= Math.max(0, bytes.length - 22 - 0xffff); at--) {
+    if (view.getUint32(at, true) === 0x06054b50) {
+      end = at;
+      break;
+    }
+  }
+  if (end < 0) return true;
+  const count = view.getUint16(end + 10, true);
+  let at = view.getUint32(end + 16, true);
+  const decoder = new TextDecoder();
+  for (let i = 0; i < count && at + 46 <= bytes.length; i++) {
+    if (view.getUint32(at, true) !== 0x02014b50) return true;
+    const nameLength = view.getUint16(at + 28, true);
+    const extra = view.getUint16(at + 30, true);
+    const comment = view.getUint16(at + 32, true);
+    if (decoder.decode(bytes.subarray(at + 46, at + 46 + nameLength)) === 'xl/workbook.xml') return true;
+    at += 46 + nameLength + extra + comment;
+  }
+  return false;
 }
 
 const tooLarge = (maxBytes: number): never => {

@@ -6,6 +6,7 @@
  */
 import { readdirSync, readFileSync } from 'node:fs';
 import { join } from 'node:path';
+import JSZip from 'jszip';
 import { readSheetFile } from './browser/read-sheet-file';
 import { jsonSchemaAdapter } from './json-schema-adapter';
 import { readSheet } from './node/read-sheet';
@@ -73,6 +74,30 @@ describe('binary input is refused, identically, by all five entry points', () =>
     expect(Object.values(await allFive(bytes, 'nul-after-8k.csv'))).toEqual(Array(5).fill({ ok: true }));
     const read = await readCsvFile(bytes);
     expect(read.rows.at(-1)).toEqual(['Late', 'before\u0000after']);
+  });
+
+  it('refuses a zip that is not a workbook with one code and one message from all five (rc.2)', async () => {
+    const zip = new JSZip();
+    zip.file('data.csv', 'Name,City\r\nAda,Chennai\r\n');
+    zip.file('notes/readme.txt', 'not a workbook');
+    for (const compression of ['STORE', 'DEFLATE'] as const) {
+      const bytes = await zip.generateAsync({ type: 'uint8array', compression });
+      for (const name of ['archive.zip', 'archive.xlsx', 'archive.csv']) {
+        expect(Object.values(await allFive(bytes, name))).toEqual(
+          Array(5).fill({ ok: false, name: 'ImportError', code: 'UNSUPPORTED_FORMAT', message: 'This is a zip archive that is not an Excel workbook. Upload an .xlsx or .csv file.' }),
+        );
+      }
+    }
+  });
+
+  it('still tells a readCsvFile caller that a real workbook is a workbook', async () => {
+    const workbook = fixture('real-world/case1_1904_dates.xlsx');
+    expect(await outcome(() => readCsvFile(workbook))).toEqual({
+      ok: false,
+      name: 'ImportError',
+      code: 'UNSUPPORTED_FORMAT',
+      message: 'This is an .xlsx workbook. Read it with readSheetFile from sheet-to-schema/browser, or save it as CSV.',
+    });
   });
 
   it('still refuses .xls and UTF-16 with their own messages, which come first', async () => {
